@@ -1,46 +1,52 @@
 import tkinter as tk
-from tkinter import simpledialog
+from tkinter import simpledialog, filedialog, messagebox
 from yt_dlp import YoutubeDL
 import os
 import subprocess
 
-# ダウンロードオプションを設定
-output_dir = r'D:\ピクチャ\youtube\素材\a共通\BGM'
+# ダウンロードオプションを取得するための関数
+def get_download_options(dl_dir):
+    print("test")
+    print(str(dl_dir)+"dl_dir")
 
-# URLを入力するダイアログを表示
-url = simpledialog.askstring("youtube音声用ダウンローダー", "ここにyoutubeのURLを入力:")
 
+    return {
 
-ydl_opts = {
-    'format': 'bestaudio[ext=webm]',  # WebM形式の音声を選択
-    'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),  # 保存先ディレクトリを指定
-}
+        'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'),  # 保存先ディレクトリを指定
+        'ffmpeg_location': 'C:\ProgramData\chocolatey\bin\ffmpeg.exe', # ffmpegのパスを指定
+        'format' : 'bestvideo+bestaudio/best'
+    }
 
-def download_video(url):
+# ダウンロード処理を行う関数
+def download_video(url, output_dir):
+    ydl_opts = get_download_options(output_dir)
     with YoutubeDL(ydl_opts) as ydl:
         try:
             ydl.download([url])
-            # ダウンロード後にエクスプローラーでディレクトリを開く
-            open_directory(output_dir)
+            
+            
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
-def open_directory(path):
-    # エクスプローラーでディレクトリを開く
-    if os.name == 'nt':  # Windowsの場合
-        subprocess.run(['explorer', path])
-    else:
-        print(f"Directory opening is not supported on this OS.")
 
-# Tkinterのウィンドウを作成
+# GUIの設定
 root = tk.Tk()
 root.withdraw()  # メインウィンドウを隠す
 
-# URLを入力するダイアログを表示
+# URL入力ダイアログ
+url = simpledialog.askstring("Input", "Enter the YouTube video URL:")
+if not url:
+    messagebox.showerror("Error", "No URL provided")
 
+ # 保存先のディレクトリ選択ダイアログ
+output_dir = filedialog.askdirectory(title="Select the directory to save the file")
+print("test")
+os.startfile(output_dir)
 
-# URLが入力された場合にダウンロードを開始
-if url:
-    download_video(url)
-else:
-    print("No URL provided")
+print(str(output_dir)+"outoput_dir")
+
+if not output_dir:
+    messagebox.showerror("Error", "No directory selected")
+
+# ダウンロード処理
+download_video(url, output_dir)
