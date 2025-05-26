@@ -5,16 +5,11 @@ import os
 import subprocess
 
 # ダウンロードオプションを取得するための関数
-def get_download_options(dl_dir):
-    print("test")
-    print(str(dl_dir)+"dl_dir")
-
-
+def get_download_options(output_dir):
     return {
-
-        'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'),  # 保存先ディレクトリを指定
-        'ffmpeg_location': 'C:\ProgramData\chocolatey\bin\ffmpeg.exe', # ffmpegのパスを指定
-        'format' : 'bestvideo+bestaudio/best'
+        'format':'best',
+        'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),  # 保存先ディレクトリを指定
+        'ffmpeg_location': r'C:\ffmpeg\bin',  # ffmpegのパスを指定
     }
 
 # ダウンロード処理を行う関数
@@ -23,30 +18,38 @@ def download_video(url, output_dir):
     with YoutubeDL(ydl_opts) as ydl:
         try:
             ydl.download([url])
-            
-            
+            # ダウンロード後にエクスプローラーでディレクトリを開く
+            open_directory(output_dir)
         except Exception as e:
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
 
+# エクスプローラーでディレクトリを開く関数
+def open_directory(path):
+    if os.name == 'nt':  # Windowsの場合
+        subprocess.run(['explorer', path])
+    else:
+        messagebox.showinfo("Info", "This function is only supported on Windows.")
 
 # GUIの設定
-root = tk.Tk()
-root.withdraw()  # メインウィンドウを隠す
+def run_downloader():
+    root = tk.Tk()
+    root.withdraw()  # メインウィンドウを隠す
 
-# URL入力ダイアログ
-url = simpledialog.askstring("Input", "Enter the YouTube video URL:")
-if not url:
-    messagebox.showerror("Error", "No URL provided")
+    # URL入力ダイアログ
+    url = simpledialog.askstring("Input", "Enter the YouTube video URL:")
+    if not url:
+        messagebox.showerror("Error", "No URL provided")
+        return
 
- # 保存先のディレクトリ選択ダイアログ
-output_dir = filedialog.askdirectory(title="Select the directory to save the file")
-print("test")
-os.startfile(output_dir)
+    # 保存先のディレクトリ選択ダイアログ
+    output_dir = filedialog.askdirectory(title="Select the directory to save the file")
+    if not output_dir:
+        messagebox.showerror("Error", "No directory selected")
+        return
 
-print(str(output_dir)+"outoput_dir")
+    # ダウンロード処理
+    download_video(url, output_dir)
 
-if not output_dir:
-    messagebox.showerror("Error", "No directory selected")
-
-# ダウンロード処理
-download_video(url, output_dir)
+# メイン処理
+if __name__ == "__main__":
+    run_downloader()
