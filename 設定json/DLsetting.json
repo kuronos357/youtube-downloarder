@@ -1,9 +1,0 @@
-{
-    "comment1": "D:\\Picture\\youtube\\素材\\a共通\\その他\\ダウンロード",
-    "default_directory": "D:\\Picture\\youtube\\素材\\a共通\\BGM",
-    "coment2": "C:\\Users\\kuron.HX99G\\Documents\\programming\\作業用・テスト用ディレクトリ",
-    "default_format": "mp3",
-    "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
-    "download_subtitles": false,
-    "embed_subtitles": false
-}
