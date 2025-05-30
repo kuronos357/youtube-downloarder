@@ -1,0 +1,14 @@
+# Pythonの一時ファイル
+__pycache__/
+*.pyc
+
+# ログファイル
+*.log
+
+# 秘密鍵やAPIキーなど
+*.env
+apikey.json
+
+# IDEの設定ファイル
+.vscode/
+.idea/
