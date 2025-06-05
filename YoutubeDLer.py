@@ -3,7 +3,7 @@ import json
 import pyperclip
 from yt_dlp import YoutubeDL
 
-file_path = "python/Youtubeダウンローダー/設定json/config.json"
+file_path = "python/youtube-downloarder/設定json/config.json"  # 設定ファイルのパス
 
 # jsonファイルを読み込む関数
 def read_json(file_path):
