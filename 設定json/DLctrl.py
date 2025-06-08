@@ -53,6 +53,10 @@ class ConfigGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('設定マネージャー')
+        self.geometry('800x800')  # 初期ウィンドウサイズ
+        self.minsize(600, 600)  # 最小ウィンドウサイズ
+        self.maxsize(800, 1200)  # 最大ウィンドウサイズ
+        # self.iconbitmap('icon.ico')  # アイコンファイルのパスを指定（必要に応じて変更）
         self.resizable(True, True)
         self.config_data = load_config()
         self.dir_widgets = []  # ディレクトリ関連のウィジェット保存用
