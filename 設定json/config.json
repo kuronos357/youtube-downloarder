@@ -1,6 +1,6 @@
 {
-    "default_directory": "/mnt/chromeos/PlayFiles/Podcasts",
-    "default_format": "webm",
+    "default_directory": "/mnt/chromeos/PlayFiles/Music/BGM",
+    "default_format": "mp3",
     "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
     "download_subtitles": false,
     "embed_subtitles": false,
