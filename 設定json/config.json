@@ -10,5 +10,41 @@
         "/mnt/chromeos/PlayFiles/Movies",
         "/mnt/chromeos/PlayFiles/Podcasts",
         "/home/kuronos357/programming"
-    ]
+    ],
+    "makedirector": true,
+    "subtitle_languages": [
+        "ja",
+        "en"
+    ],
+    "write_info_json": false,
+    "write_thumbnail": false,
+    "max_height": 1080,
+    "fallback_height": 720,
+    "audio_quality": "192",
+    "player_clients": [
+        "android",
+        "web",
+        "ios"
+    ],
+    "skip_formats": [
+        "hls"
+    ],
+    "enable_android_fallback": true,
+    "format_options": {
+        "mp4": {
+            "primary_format": "best[ext=mp4][height<={max_height}]/best[ext=mp4]",
+            "fallback_format": "best[height<={fallback_height}]/best",
+            "description": "MP4形式（推奨）"
+        },
+        "webm": {
+            "primary_format": "best[ext=webm][height<={max_height}]/best[ext=webm]",
+            "fallback_format": "best[height<={fallback_height}]/best",
+            "description": "WebM形式"
+        },
+        "mp3": {
+            "primary_format": "bestaudio[ext=m4a]/bestaudio",
+            "fallback_format": "bestaudio/best",
+            "description": "MP3音声形式"
+        }
+    }
 }

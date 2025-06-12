@@ -4,7 +4,7 @@ import pyperclip
 import logging
 from pathlib import Path
 from yt_dlp import YoutubeDL
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 # ログ設定
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,22 +25,10 @@ class YouTubeDownloader:
                 return config
         except FileNotFoundError:
             logger.error(f"設定ファイルが見つかりません: {self.config_path}")
-            return self._create_default_config()
+            raise
         except json.JSONDecodeError:
             logger.error("設定ファイルのJSON形式が無効です")
-            return self._create_default_config()
-    
-    def _create_default_config(self) -> Dict:
-        """デフォルト設定を作成"""
-        default_config = {
-            "default_directory": "./downloads",
-            "default_format": "mp4",
-            "download_subtitles": False,
-            "embed_subtitles": False,
-            "ffmpeg_path": "ffmpeg"
-        }
-        logger.info("デフォルト設定を使用します")
-        return default_config
+            raise
     
     def _setup_ffmpeg(self):
         """FFmpegのパスを設定"""
@@ -52,62 +40,97 @@ class YouTubeDownloader:
                 logger.info(f"FFmpegパスを追加: {ffmpeg_dir}")
     
     def _get_base_options(self, output_dir: str) -> Dict:
-        """基本的なダウンロードオプションを取得"""
-        return {
+        """基本的なダウンロードオプションを取得（設定ファイルベース）"""
+        config = self.config
+        
+        options = {
             'outtmpl': str(Path(output_dir) / '%(title)s.%(ext)s'),
-            'writeinfojson': True,  # メタデータ保存
-            'writethumbnail': True,  # サムネイル保存
-            'embedsubs': self.config.get('embed_subtitles', False),
-            'writesubtitles': self.config.get('download_subtitles', False),
-            'subtitleslangs': ['ja', 'en'] if self.config.get('download_subtitles', False) else [],
-            # YouTube制限回避のための設定
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'web', 'ios'],
-                    'skip': ['hls']
-                }
-            },
-            # エラー処理の改善
-            'ignoreerrors': False,
-            'no_warnings': False,
+            'writeinfojson': config.get('write_info_json', False),
+            'writethumbnail': config.get('write_thumbnail', False),
+            'embedsubs': config.get('embed_subtitles', False),
+            'writesubtitles': config.get('download_subtitles', False),
+            'ignoreerrors': config.get('ignore_errors', False),
+            'no_warnings': config.get('no_warnings', False),
         }
+        
+        # 字幕言語設定
+        if config.get('download_subtitles', False):
+            options['subtitleslangs'] = config.get('subtitle_languages', ['ja', 'en'])
+        
+        # YouTube制限回避設定
+        youtube_args = {}
+        if config.get('player_clients'):
+            youtube_args['player_client'] = config.get('player_clients')
+        if config.get('skip_formats'):
+            youtube_args['skip'] = config.get('skip_formats')
+        
+        if youtube_args:
+            options['extractor_args'] = {'youtube': youtube_args}
+        
+        # 高度な設定
+        advanced = config.get('advanced_options', {})
+        if advanced.get('socket_timeout'):
+            options['socket_timeout'] = advanced['socket_timeout']
+        if advanced.get('retries'):
+            options['retries'] = advanced['retries']
+        if advanced.get('fragment_retries'):
+            options['fragment_retries'] = advanced['fragment_retries']
+        if advanced.get('sleep_interval'):
+            options['sleep_interval'] = advanced['sleep_interval']
+        if advanced.get('max_sleep_interval'):
+            options['max_sleep_interval'] = advanced['max_sleep_interval']
+        
+        return options
+    
+    def _substitute_format_variables(self, format_str: str) -> str:
+        """フォーマット文字列内の変数を置換"""
+        config = self.config
+        variables = {
+            'max_height': config.get('max_height', 1080),
+            'fallback_height': config.get('fallback_height', 720),
+            'audio_quality': config.get('audio_quality', '192')
+        }
+        
+        for var, value in variables.items():
+            format_str = format_str.replace(f'{{{var}}}', str(value))
+        
+        return format_str
     
     def _get_format_options(self, format_choice: str) -> Tuple[str, List[Dict]]:
-        """形式に応じたフォーマット文字列とポストプロセッサを取得"""
-        postprocessors = []
+        """形式に応じたフォーマット文字列とポストプロセッサを取得（設定ファイルベース）"""
+        format_options = self.config.get('format_options', {})
+        format_config = format_options.get(format_choice.lower())
         
-        if format_choice.lower() == "mp4":
-            # MP4: 複数のフォールバックを用意
-            format_str = (
-                'best[ext=mp4][height<=1080]/best[ext=mp4][height<=720]/'
-                'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
-                'best[height<=1080]/best[height<=720]/best'
-            )
-            logger.info("MP4形式でダウンロードします")
-            
-        elif format_choice.lower() == "webm":
-            # WebM: より柔軟な指定
-            format_str = (
-                'best[ext=webm][height<=1080]/best[ext=webm][height<=720]/'
-                'best[ext=webm]/bestvideo[ext=webm]+bestaudio[ext=webm]/'
-                'best[height<=1080]/best[height<=720]/best'
-            )
-            logger.info("WebM形式でダウンロードします")
-            
-        elif format_choice.lower() == "mp3":
-            # MP3: 音声のみ
-            format_str = 'bestaudio/best'
-            postprocessors.append({
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            })
-            logger.info("MP3形式でダウンロードします")
-            
+        if not format_config:
+            logger.warning(f"フォーマット '{format_choice}' が見つかりません。デフォルトを使用します。")
+            format_str = 'best'
+            postprocessors = []
         else:
-            # その他: 最も確実な形式
-            format_str = 'best[height<=720]/best'
-            logger.info("利用可能な最良の形式でダウンロードします")
+            # フォーマット文字列を取得・変数置換
+            primary_format = format_config.get('primary_format', 'best')
+            fallback_format = format_config.get('fallback_format', 'best')
+            
+            format_str = f"{self._substitute_format_variables(primary_format)}/{self._substitute_format_variables(fallback_format)}"
+            
+            # ポストプロセッサを取得
+            postprocessors = []
+            if 'postprocessor' in format_config:
+                pp_config = format_config['postprocessor'].copy()
+                # ポストプロセッサの設定内でも変数置換
+                if 'preferredquality' in pp_config:
+                    pp_config['preferredquality'] = self._substitute_format_variables(pp_config['preferredquality'])
+                postprocessors.append(pp_config)
+            
+            # MP3形式の場合は自動的にポストプロセッサを追加
+            if format_choice.lower() == 'mp3' and not postprocessors:
+                postprocessors.append({
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': self.config.get('audio_quality', '192')
+                })
+        
+        description = format_config.get('description', f'{format_choice}形式') if format_config else f'{format_choice}形式'
+        logger.info(f"{description}でダウンロードします")
         
         return format_str, postprocessors
     
@@ -131,12 +154,14 @@ class YouTubeDownloader:
         return options
     
     def _download_with_multiple_methods(self, url: str, output_dir: str, format_choice: str) -> bool:
-        """複数の方法でダウンロードを試行"""
-        methods = [
-            ("標準方法", lambda: self._download_standard(url, output_dir, format_choice)),
-            ("Android クライアント", lambda: self._download_android_client(url, output_dir)),
-            ("最低品質フォールバック", lambda: self._download_minimal(url, output_dir)),
-        ]
+        """複数の方法でダウンロードを試行（設定に基づく）"""
+        methods = [("標準方法", lambda: self._download_standard(url, output_dir, format_choice))]
+        
+        # 設定に基づいてフォールバック方法を追加
+        if self.config.get('enable_android_fallback', True):
+            methods.append(("Android クライアント", lambda: self._download_android_client(url, output_dir)))
+        
+        methods.append(("最低品質フォールバック", lambda: self._download_minimal(url, output_dir)))
         
         for method_name, download_func in methods:
             try:
@@ -158,16 +183,18 @@ class YouTubeDownloader:
             ydl.download([url])
     
     def _download_android_client(self, url: str, output_dir: str):
-        """Androidクライアントでダウンロード"""
-        options = {
-            'outtmpl': str(Path(output_dir) / '%(title)s.%(ext)s'),
-            'format': 'best[height<=720]/best',
+        """Androidクライアントでダウンロード（設定ベース）"""
+        options = self._get_base_options(output_dir)
+        # フォールバック用の簡単な設定に上書き
+        fallback_height = self.config.get('fallback_height', 720)
+        options.update({
+            'format': f'best[height<={fallback_height}]/best',
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android']
                 }
             }
-        }
+        })
         with YoutubeDL(options) as ydl:
             ydl.download([url])
     
@@ -187,12 +214,15 @@ class YouTubeDownloader:
             'quiet': True,
             'extract_flat': True,
             'skip_download': True,
-            'extractor_args': {
+        }
+        
+        # YouTube設定を追加
+        if self.config.get('player_clients'):
+            options['extractor_args'] = {
                 'youtube': {
-                    'player_client': ['android']
+                    'player_client': self.config['player_clients'][:1]  # 最初のクライアントのみ使用
                 }
             }
-        }
         
         try:
             with YoutubeDL(options) as ydl:
@@ -204,7 +234,6 @@ class YouTubeDownloader:
                         if entry and 'url' in entry:
                             video_urls.append(entry['url'])
                         elif entry and 'id' in entry:
-                            # URLが直接取得できない場合はIDから構築
                             video_urls.append(f"https://www.youtube.com/watch?v={entry['id']}")
                     
                     playlist_title = info.get('title', 'プレイリスト')
@@ -224,26 +253,39 @@ class YouTubeDownloader:
         return self._download_with_multiple_methods(url, output_dir, format_choice)
     
     def download_playlist(self, playlist_url: str, output_dir: str, format_choice: str) -> bool:
-        """プレイリストをダウンロード"""
+        """プレイリストをダウンロード（設定ベース）"""
         video_urls, playlist_title = self.get_playlist_info(playlist_url)
         
         if not video_urls:
             logger.error("プレイリストから動画URLを取得できませんでした")
             return False
         
-        # プレイリスト用ディレクトリを作成
-        playlist_dir = Path(output_dir) / self._sanitize_filename(playlist_title)
-        playlist_dir.mkdir(parents=True, exist_ok=True)
+        # プレイリスト用ディレクトリの作成設定
+        if self.config.get('mkdir_list', True):
+            if self.config.get('makedirector', True):
+                playlist_title = self._sanitize_filename(playlist_title)
+            playlist_dir = Path(output_dir) / playlist_title
+            playlist_dir.mkdir(parents=True, exist_ok=True)
+            final_output_dir = str(playlist_dir)
+        else:
+            final_output_dir = output_dir
         
         logger.info(f"プレイリスト '{playlist_title}' の {len(video_urls)} 個の動画をダウンロード開始")
         
         success_count = 0
+        
         for i, video_url in enumerate(video_urls, 1):
             logger.info(f"動画 {i}/{len(video_urls)} をダウンロード中...")
-            if self.download_single_video(video_url, str(playlist_dir), format_choice):
-                success_count += 1
-            else:
-                logger.warning(f"動画 {i} のダウンロードに失敗")
+            try:
+                if self.download_single_video(video_url, final_output_dir, format_choice):
+                    success_count += 1
+                else:
+                    logger.warning(f"動画 {i} のダウンロードに失敗")
+            except KeyboardInterrupt:
+                logger.info("ユーザーによって中断されました")
+                break
+            except Exception as e:
+                logger.error(f"動画 {i} で予期しないエラー: {str(e)}")
         
         logger.info(f"プレイリストダウンロード完了: {success_count}/{len(video_urls)} 成功")
         return success_count > 0
@@ -262,22 +304,43 @@ class YouTubeDownloader:
             logger.error("保存先ディレクトリが設定されていません")
             return False
         
-        # ディレクトリが存在しない場合は作成を試行
         try:
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             logger.info(f"保存先ディレクトリ: {output_dir}")
-            return True
         except Exception as e:
             logger.error(f"保存先ディレクトリの作成に失敗: {str(e)}")
             return False
+        
+        # フォーマット設定の確認
+        default_format = self.config.get('default_format', 'mp4')
+        format_options = self.config.get('format_options', {})
+        if default_format not in format_options:
+            logger.warning(f"デフォルトフォーマット '{default_format}' が format_options に存在しません")
+        
+        return True
+    
+    def print_available_formats(self):
+        """利用可能なフォーマットを表示"""
+        format_options = self.config.get('format_options', {})
+        logger.info("利用可能なフォーマット:")
+        for format_name, format_config in format_options.items():
+            description = format_config.get('description', format_name)
+            logger.info(f"  {format_name}: {description}")
     
     def run(self):
         """メイン実行処理"""
+        # ログレベルを設定から適用
+        log_level = self.config.get('log_level', 'INFO')
+        logging.getLogger().setLevel(getattr(logging, log_level.upper(), logging.INFO))
+        
         logger.info("YouTube ダウンローダーを開始")
         
         # 設定の検証
         if not self.validate_config():
             return
+        
+        # 利用可能フォーマットの表示
+        self.print_available_formats()
         
         # クリップボードからURLを取得
         try:
