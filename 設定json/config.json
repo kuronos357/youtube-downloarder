@@ -1,14 +1,79 @@
 {
-    "default_directory": "/mnt/chromeos/PlayFiles/Podcasts",
-    "default_format": "webm",
-    "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
-    "download_subtitles": false,
-    "embed_subtitles": false,
-    "mkdir_list": true,
-    "directories": [
-        "/mnt/chromeos/PlayFiles/Music/BGM",
-        "/mnt/chromeos/PlayFiles/Movies",
-        "/mnt/chromeos/PlayFiles/Podcasts",
-        "/home/kuronos357/programming"
-    ]
+  "comment": "基本設定",
+  "default_directory": "C:/Downloads/YouTube",
+  "default_format": "mp4",
+  "ffmpeg_path": "ffmpeg",
+  "log_level": "INFO",
+
+  "comment2": "字幕関連設定",
+  "download_subtitles": false,
+  "embed_subtitles": false,
+  "subtitle_languages": ["ja", "en"],
+  
+  "comment3": "メタデータ設定",
+  "write_info_json": true,
+  "write_thumbnail": true,
+  "ignore_errors": false,
+  "no_warnings": false,
+  
+  "comment4": "品質設定",
+  "max_height": 1080,
+  "fallback_height": 720,
+  "audio_quality": "192",
+  
+  "comment5": "YouTube制限回避設定",
+  "player_clients": ["android", "web", "ios"],
+  "skip_formats": ["hls"],
+  "enable_android_fallback": true,
+  
+  "comment6": "プレイリスト設定",
+  "mkdir_list": true,
+  "makedirector": true,
+  
+  "comment7": "高度な設定",
+  "advanced_options": {
+    "socket_timeout": 30,
+    "retries": 3,
+    "fragment_retries": 3,
+    "sleep_interval": 1,
+    "max_sleep_interval": 5
+  },
+  
+  "comment8": "フォーマット別詳細設定",
+  "format_options": {
+    "mp4": {
+      "primary_format": "best[ext=mp4][height<={max_height}]/best[height<={max_height}]",
+      "fallback_format": "best[height<={fallback_height}]/best",
+      "description": "MP4形式（推奨）"
+    },
+    "webm": {
+      "primary_format": "best[ext=webm][height<={max_height}]/best[height<={max_height}]",
+      "fallback_format": "best[height<={fallback_height}]/best",
+      "description": "WebM形式"
+    },
+    "mp3": {
+      "primary_format": "bestaudio[ext=m4a]/bestaudio",
+      "fallback_format": "bestaudio/best",
+      "postprocessor": {
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": "mp3",
+        "preferredquality": "{audio_quality}"
+      },
+      "description": "MP3音声のみ"
+    },
+    "flac": {
+      "primary_format": "bestaudio[ext=m4a]/bestaudio",
+      "fallback_format": "bestaudio/best",
+      "postprocessor": {
+        "key": "FFmpegExtractAudio",
+        "preferredcodec": "flac"
+      },
+      "description": "FLAC音声（高品質）"
+    },
+    "best": {
+      "primary_format": "best",
+      "fallback_format": "best",
+      "description": "最高品質"
+    }
+  }
 }
