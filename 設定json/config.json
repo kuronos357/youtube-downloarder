@@ -2,7 +2,7 @@
     "directory1": "/mnt/chromeos/PlayFiles/Music/BGM",
     "directory2": "/mnt/chromeos/PlayFiles/Movies",
     "directory3": "/mnt/chromeos/PlayFiles/Podcasts",
-    "default_directory": "/mnt/chromeos/PlayFiles/Movies",
+    "default_directory": "/mnt/chromeos/PlayFiles/Podcasts",
     "default_format": "webm",
     "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
     "download_subtitles": false,
