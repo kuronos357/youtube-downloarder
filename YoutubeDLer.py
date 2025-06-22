@@ -13,10 +13,58 @@ def read_json(file_path):
 
 data = read_json(file_path)
 
+# デフォルトディレクトリとフォーマットを取得する関数
+def get_default_settings():
+    directories = data.get('directories', [])
+    default_index = data.get('default_directory_index', 0)
+    
+    if not directories:
+        print("ディレクトリが設定されていません。")
+        return None, None
+    
+    # インデックスが範囲外の場合は最初のディレクトリを使用
+    if default_index >= len(directories):
+        default_index = 0
+    
+    default_dir_info = directories[default_index]
+    return default_dir_info['path'], default_dir_info['format']
+
+# 対話的にディレクトリを選択する関数
+def select_directory_interactive():
+    directories = data.get('directories', [])
+    if not directories:
+        print("ディレクトリが設定されていません。")
+        return None, None
+    
+    if len(directories) == 1:
+        # ディレクトリが1つしかない場合はそれを使用
+        return directories[0]['path'], directories[0]['format']
+    
+    print("\n利用可能なディレクトリ:")
+    for i, dir_info in enumerate(directories):
+        print(f"{i + 1}. {dir_info['path']} (形式: {dir_info['format']})")
+    
+    while True:
+        try:
+            choice = input(f"\nディレクトリを選択してください (1-{len(directories)}): ").strip()
+            if not choice:
+                # 空入力の場合はデフォルトを使用
+                return get_default_settings()
+            
+            index = int(choice) - 1
+            if 0 <= index < len(directories):
+                selected = directories[index]
+                return selected['path'], selected['format']
+            else:
+                print(f"1から{len(directories)}の間で選択してください。")
+        except ValueError:
+            print("数字を入力してください。")
+
 # ダウンロードオプションを取得する関数
 def get_download_options(dl_dir, format_choice):
     download_subtitles = data.get('download_subtitles', False)  # 字幕ダウンロード設定を取得
     embed_subtitles = data.get('embed_subtitles', False)  # 字幕埋め込み設定を取得
+    
     options = {
         'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'),
     }
@@ -32,6 +80,18 @@ def get_download_options(dl_dir, format_choice):
         }]
     elif format_choice == "webm":  # webm
         options['format'] = 'bestvideo[ext=webm]+bestaudio[ext=webm]/best[ext=webm]/best'
+    elif format_choice == "wav":  # wav
+        options['format'] = 'bestaudio'
+        options['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'wav',
+        }]
+    elif format_choice == "flac":  # flac
+        options['format'] = 'bestaudio'
+        options['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'flac',
+        }]
     else:
         options['format'] = 'best'
 
@@ -88,12 +148,26 @@ def main():
         print("クリップボードにURLがありません。")
         return
 
-    output_dir = data.get('default_directory', "保存先ディレクトリが選択されていません")
-    format_choice = data.get('default_format', "3")
+    # 対話的選択の設定を確認
+    interactive_selection = data.get('interactive_selection', False)
+    
+    if interactive_selection:
+        # 対話的にディレクトリを選択
+        output_dir, format_choice = select_directory_interactive()
+    else:
+        # デフォルト設定を使用
+        output_dir, format_choice = get_default_settings()
+    
+    if not output_dir or not format_choice:
+        print("設定が不正です。")
+        return
 
     if not os.path.isdir(output_dir):
-        print("有効な保存先ディレクトリが選択されていません。")
+        print(f"保存先ディレクトリが存在しません: {output_dir}")
         return
+
+    print(f"保存先: {output_dir}")
+    print(f"形式: {format_choice}")
 
     # 再生リストの場合、個別の動画URLを取得
     if "playlist" in video_url:
@@ -102,21 +176,36 @@ def main():
             print("再生リストから動画URLを取得できませんでした。")
             return
 
-        # 再生リスト用のディレクトリを作成
-        playlist_dir = os.path.join(output_dir, playlist_title)
-        os.makedirs(playlist_dir, exist_ok=True)
+        # makedirectorの設定を確認してディレクトリ作成を決定
+        makedirector = data.get('makedirector', True)
+        if makedirector:
+            # 再生リスト用のディレクトリを作成
+            playlist_dir = os.path.join(output_dir, playlist_title)
+            os.makedirs(playlist_dir, exist_ok=True)
+            final_output_dir = playlist_dir
+            print(f"再生リスト用ディレクトリを作成: {playlist_dir}")
+        else:
+            # 直接指定されたディレクトリに保存
+            final_output_dir = output_dir
+            print("再生リストの動画を直接指定ディレクトリに保存します。")
 
         print(f"再生リスト内の動画数: {len(video_urls)}")
-        for url in video_urls:
-            download_video(url, playlist_dir, format_choice)
+        for i, url in enumerate(video_urls, 1):
+            print(f"ダウンロード中 ({i}/{len(video_urls)}): {url}")
+            download_video(url, final_output_dir, format_choice)
     else:
         # 個別の動画URLの場合
+        print("個別動画をダウンロードしています...")
         download_video(video_url, output_dir, format_choice)
+
+    print("ダウンロード完了！")
 
 # ffmpegのパスを設定
 ffmpeg_path = data.get('ffmpeg_path', r'C:\ProgramData\chocolatey\bin\ffmpeg.exe')
-if ffmpeg_path not in os.environ['PATH']:
-    os.environ['PATH'] += ';' + ffmpeg_path
+if ffmpeg_path and os.path.exists(ffmpeg_path):
+    ffmpeg_dir = os.path.dirname(ffmpeg_path)
+    if ffmpeg_dir not in os.environ['PATH']:
+        os.environ['PATH'] += os.pathsep + ffmpeg_dir
 
 if __name__ == "__main__":
     main()

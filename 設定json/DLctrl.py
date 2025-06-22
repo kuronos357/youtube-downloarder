@@ -11,11 +11,13 @@ CONFIG_FILE = Path(__file__).parent / 'config.json'
 
 # 設定ファイルが存在しない場合のデフォルト設定
 DEFAULT_CONFIG = {
-    "directory1": "/mnt/chromeos/PlayFiles/Music/BGM",
-    "directory2": "/mnt/chromeos/PlayFiles/Movies",
-    "directory3": "/mnt/chromeos/PlayFiles/Podcasts",
-    "default_directory": "/mnt/chromeos/PlayFiles/Music/BGM",
-    "default_format": "mp3",
+    "directories": [
+        {"path": "/mnt/chromeos/PlayFiles/Music/BGM", "format": "mp3"},
+        {"path": "/mnt/chromeos/PlayFiles/Movies", "format": "mp4"},
+        {"path": "/mnt/chromeos/PlayFiles/Podcasts", "format": "mp3"}
+    ],
+    "default_directory_index": 0,
+    "interactive_selection": False,
     "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
     "download_subtitles": False,
     "embed_subtitles": False,
@@ -24,158 +26,296 @@ DEFAULT_CONFIG = {
 
 # 設定ファイルを読み込む関数
 def load_config():
-    # CONFIG_FILEが存在する場合、JSON形式で読み込み設定を取得
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    # 存在しない場合はデフォルト設定を返す
+            config = json.load(f)
+            # 古い形式から新しい形式への変換
+            if 'directory1' in config:
+                directories = []
+                for i in range(1, 4):
+                    dir_key = f'directory{i}'
+                    if dir_key in config:
+                        directories.append({
+                            "path": config[dir_key],
+                            "format": config.get('default_format', 'mp3')
+                        })
+                config['directories'] = directories
+                config['default_directory_index'] = 0
+                # 古いキーを削除
+                for key in ['directory1', 'directory2', 'directory3', 'default_directory', 'default_format']:
+                    config.pop(key, None)
+            return config
     return DEFAULT_CONFIG.copy()
 
 # 設定ファイルに設定情報を書き込む関数
 def save_config(config):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        # インデント付きでJSONデータを保存
         json.dump(config, f, indent=4, ensure_ascii=False)
 
 # ConfigGUIクラス: 設定画面のためのメインウィンドウクラス
 class ConfigGUI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('設定マネージャー')  # ウィンドウタイトル
-        self.resizable(True, True)  # ウィンドウサイズ固定
-        # 設定を読み込み、保存先用のディクショナリに格納する
+        self.title('設定マネージャー')
+        self.geometry('1000x800')  # ウィンドウの初期サイズを設定
+        self.resizable(True, True)
         self.config_data = load_config()
-        self.dir_radios = []  # ダウンロード先ディレクトリ用のラジオボタンのリスト
-        self._create_vars()  # 各種変数を初期化
-        self._build_ui()  # GUIレイアウトの構築
+        self.dir_widgets = []  # ディレクトリ用ウィジェットのリスト
+        self._create_vars()
+        self._build_ui()
 
-    # GUIで使用する各種変数（tkinter変数）の作成
     def _create_vars(self):
-        self.dir_var = tk.StringVar(value=self.config_data.get('default_directory', ''))  # 選択中のディレクトリ
-        self.format_var = tk.StringVar(value=self.config_data.get('default_format', 'mp3'))  # 選択中のファイル形式
-        self.ffmpeg_var = tk.StringVar(value=self.config_data.get('ffmpeg_path', ''))  # ffmpegのパス
-        self.sub_dl_var = tk.BooleanVar(value=self.config_data.get('download_subtitles', False))  # 字幕ダウンロード設定
-        self.sub_embed_var = tk.BooleanVar(value=self.config_data.get('embed_subtitles', False))  # 字幕埋め込み設定
-        self.makedir_var = tk.BooleanVar(value=self.config_data.get('mkdir_list', True))  # ディレクトリ作成設定
+        self.dir_var = tk.IntVar(value=self.config_data.get('default_directory_index', 0))
+        self.interactive_var = tk.BooleanVar(value=self.config_data.get('interactive_selection', False))
+        self.ffmpeg_var = tk.StringVar(value=self.config_data.get('ffmpeg_path', ''))
+        self.sub_dl_var = tk.BooleanVar(value=self.config_data.get('download_subtitles', False))
+        self.sub_embed_var = tk.BooleanVar(value=self.config_data.get('embed_subtitles', False))
+        self.makedir_var = tk.BooleanVar(value=self.config_data.get('makedirector', True))
 
-    # GUIのウィジェット構築
     def _build_ui(self):
-        frame = ttk.Frame(self, padding=10)
-        frame.grid()
+        # メインフレーム
+        main_frame = ttk.Frame(self, padding=10)
+        main_frame.pack(fill='both', expand=True)
 
         # ダウンロード先ディレクトリの設定セクション
-        ttk.Label(frame, text='ダウンロード先ディレクトリ:').grid(row=0, column=0, columnspan=2, sticky='w')
-        # 3つの候補ディレクトリに対してラジオボタンと変更ボタンを配置
-        for i in range(1, 4):
-            key = f'directory{i}'  # 設定キーの生成
-            path = self.config_data.get(key, '')
-            # ラジオボタンでディレクトリを選択できるようにする
-            rb = ttk.Radiobutton(
-                frame,
-                text=f'候補{i}: {path}',
-                variable=self.dir_var,
-                value=path
+        dir_section = ttk.LabelFrame(main_frame, text='ダウンロード先ディレクトリ', padding=5)
+        dir_section.pack(fill='both', expand=True, pady=(0, 10))
+
+        # ディレクトリ管理ボタン
+        btn_frame = ttk.Frame(dir_section)
+        btn_frame.pack(fill='x', pady=(0, 5))
+        
+        ttk.Button(btn_frame, text='ディレクトリを追加', command=self.add_directory).pack(side='left')
+        ttk.Label(btn_frame, text='※ディレクトリを追加後、パスを設定してください').pack(side='left', padx=(10, 0))
+
+        # スクロール可能なフレーム
+        canvas = tk.Canvas(dir_section, height=200)
+        scrollbar = ttk.Scrollbar(dir_section, orient="vertical", command=canvas.yview)
+        self.scrollable_frame = ttk.Frame(canvas)
+
+        # スクロール設定
+        def configure_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+        self.scrollable_frame.bind("<Configure>", configure_scroll_region)
+        canvas.bind("<MouseWheel>", on_mousewheel)
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # ディレクトリリストを構築
+        self._build_directory_list()
+
+        # ディレクトリ選択モード設定
+        mode_frame = ttk.LabelFrame(main_frame, text="ディレクトリ選択モード", padding=5)
+        mode_frame.pack(fill='x', pady=(0, 10))
+        
+        ttk.Radiobutton(
+            mode_frame, 
+            text="デフォルト設定を使用（自動選択）", 
+            variable=self.interactive_var, 
+            value=False
+        ).pack(anchor='w')
+        
+        ttk.Radiobutton(
+            mode_frame, 
+            text="実行時に対話的選択", 
+            variable=self.interactive_var, 
+            value=True
+        ).pack(anchor='w')
+
+        # その他の設定セクション
+        other_frame = ttk.LabelFrame(main_frame, text="その他の設定", padding=5)
+        other_frame.pack(fill='x', pady=(0, 10))
+
+        # ffmpegパス設定
+        ffmpeg_frame = ttk.Frame(other_frame)
+        ffmpeg_frame.pack(fill='x', pady=(0, 5))
+        ttk.Label(ffmpeg_frame, text='ffmpegパス:').pack(anchor='w')
+        
+        ffmpeg_entry_frame = ttk.Frame(ffmpeg_frame)
+        ffmpeg_entry_frame.pack(fill='x', pady=(2, 0))
+        ttk.Entry(ffmpeg_entry_frame, textvariable=self.ffmpeg_var).pack(side='left', fill='x', expand=True)
+        ttk.Button(ffmpeg_entry_frame, text='選択', command=self.choose_ffmpeg).pack(side='right', padx=(5, 0))
+
+        # 字幕関連の設定
+        ttk.Checkbutton(other_frame, text='字幕をダウンロード', variable=self.sub_dl_var).pack(anchor='w', pady=2)
+        ttk.Checkbutton(other_frame, text='字幕を埋め込み', variable=self.sub_embed_var).pack(anchor='w', pady=2)
+        ttk.Checkbutton(other_frame, text='プレイリストの場合のディレクトリ作成する', variable=self.makedir_var).pack(anchor='w', pady=2)
+
+        # ボタンフレーム
+        bottom_btn_frame = ttk.Frame(main_frame)
+        bottom_btn_frame.pack(fill='x', pady=(10, 0))
+        
+        ttk.Button(bottom_btn_frame, text='保存', command=self.on_save).pack(side='left', padx=(0, 5))
+        ttk.Button(bottom_btn_frame, text='設定ファイルを開く', command=self.open_config).pack(side='left', padx=5)
+        ttk.Button(bottom_btn_frame, text='終了', command=self.destroy).pack(side='right')
+
+    def _build_directory_list(self):
+        # 既存のウィジェットをクリア
+        for widgets in self.dir_widgets:
+            if 'frame' in widgets and widgets['frame'].winfo_exists():
+                widgets['frame'].destroy()
+        self.dir_widgets.clear()
+
+        # ディレクトリごとにウィジェットを作成
+        for i, dir_info in enumerate(self.config_data['directories']):
+            self._create_directory_row(i, dir_info)
+        
+        # スクロール領域を更新
+        self.scrollable_frame.update_idletasks()
+
+    def _create_directory_row(self, index, dir_info):
+        row_frame = ttk.Frame(self.scrollable_frame)
+        row_frame.pack(fill='x', pady=2, padx=5)
+
+        # すべてを1行に配置
+        # ラジオボタン
+        radio = ttk.Radiobutton(
+            row_frame,
+            text=f"候補{index + 1}",
+            variable=self.dir_var,
+            value=index
+        )
+        radio.pack(side='left')
+
+        # パス表示・編集エントリ
+        path_var = tk.StringVar(value=dir_info['path'])
+        path_entry = ttk.Entry(row_frame, textvariable=path_var, width=40)
+        path_entry.pack(side='left', fill='x', expand=True, padx=(5, 0))
+
+        # フォーマット選択
+        format_var = tk.StringVar(value=dir_info['format'])
+        format_combo = ttk.Combobox(
+            row_frame,
+            textvariable=format_var,
+            values=['mp3', 'mp4', 'webm', 'wav', 'flac'],
+            width=8,
+            state='readonly'
+        )
+        format_combo.pack(side='right', padx=(5, 0))
+
+        # 選択ボタン
+        select_btn = ttk.Button(
+            row_frame,
+            text='選択',
+            command=lambda idx=index: self.change_dir(idx)
+        )
+        select_btn.pack(side='right', padx=(5, 0))
+
+        # 削除ボタン（2個以上ある場合のみ表示）
+        delete_btn = None
+        if len(self.config_data['directories']) > 1:
+            delete_btn = ttk.Button(
+                row_frame,
+                text='削除',
+                command=lambda idx=index: self.delete_directory(idx)
             )
-            rb.grid(row=i, column=0, sticky='w', pady=2)
-            # ラジオボタンと対応するキーをリストに追加（後で更新時に利用）
-            self.dir_radios.append((rb, key))
-            # 「変更」ボタンでディレクトリの変更ダイアログを表示
-            btn = ttk.Button(
-                frame,
-                text='変更',
-                command=lambda k=key, idx=i: self.change_dir(k, idx)
-            )
-            btn.grid(row=i, column=1, padx=5)
+            delete_btn.pack(side='right', padx=(5, 0))
 
-        # 出力フォーマットの選択セクション
-        ttk.Label(frame, text='出力フォーマット:').grid(row=4, column=0, sticky='w', pady=(10, 0))
-        formats = ['mp3', 'webm', 'mp4']  # 利用可能なフォーマット
-        # 各フォーマットに対してラジオボタンを配置
-        for j, fmt in enumerate(formats, start=5):
-            ttk.Radiobutton(
-                frame,
-                text=fmt,
-                variable=self.format_var,
-                value=fmt
-            ).grid(row=j, column=0, sticky='w')
+        # ウィジェットを保存
+        widgets = {
+            'frame': row_frame,
+            'radio': radio,
+            'path_var': path_var,
+            'path_entry': path_entry,
+            'format_var': format_var,
+            'format_combo': format_combo,
+            'select_btn': select_btn,
+            'delete_btn': delete_btn
+        }
+        self.dir_widgets.append(widgets)
 
-        # ffmpegパス設定セクション
-        ttk.Label(frame, text='ffmpegパス:').grid(row=8, column=0, sticky='w', pady=(10, 0))
-        # 入力エントリでパスを表示・編集
-        entry = ttk.Entry(frame, textvariable=self.ffmpeg_var, width=40)
-        entry.grid(row=9, column=0, columnspan=2)
-        # 「選択」ボタンでファイル選択ダイアログを開く
-        ttk.Button(frame, text='選択', command=self.choose_ffmpeg).grid(row=9, column=2, padx=5)
+    def add_directory(self):
+        # 新しいディレクトリを追加
+        new_dir = {"path": "", "format": "mp3"}
+        self.config_data['directories'].append(new_dir)
+        self._build_directory_list()
+        
+        # 追加されたことを視覚的に示す
+        messagebox.showinfo('追加完了', f'新しいディレクトリ候補{len(self.config_data["directories"])}を追加しました。\nパスを設定してください。')
 
-        # 字幕関連の設定セクション
-        ttk.Checkbutton(frame, text='字幕をダウンロード', variable=self.sub_dl_var).grid(row=10, column=0, sticky='w', pady=(10, 0))
-        ttk.Checkbutton(frame, text='字幕を埋め込み', variable=self.sub_embed_var).grid(row=11, column=0, sticky='w')
+    def delete_directory(self, index):
+        # ディレクトリを削除（最低1個は残す）
+        if len(self.config_data['directories']) <= 1:
+            messagebox.showwarning('警告', '最低1つのディレクトリは必要です。')
+            return
+        
+        # 確認ダイアログ
+        dir_path = self.config_data['directories'][index]['path']
+        dir_name = dir_path if dir_path else f"候補{index + 1}"
+        
+        if messagebox.askyesno('確認', f'"{dir_name}"を削除しますか？'):
+            self.config_data['directories'].pop(index)
+            
+            # 選択中のインデックスを調整
+            current_index = self.dir_var.get()
+            if current_index >= len(self.config_data['directories']):
+                self.dir_var.set(len(self.config_data['directories']) - 1)
+            elif current_index > index:
+                self.dir_var.set(current_index - 1)
+            
+            self._build_directory_list()
 
-        # プレイリスト対象のディレクトリ作成設定
-        ttk.Checkbutton(frame, text='プレイリストの場合のディレクトリ作成する', variable=self.makedir_var).grid(row=12, column=0, sticky='w')
+    def change_dir(self, index):
+        # ディレクトリ選択ダイアログ
+        new_path = filedialog.askdirectory(title=f'候補{index + 1}のディレクトリを選択')
+        if new_path:
+            self.dir_widgets[index]['path_var'].set(new_path)
 
-        # 操作用ボタンの配置エリア
-        btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=13, column=0, columnspan=3, pady=15)
-        # 「保存」ボタンで設定内容をファイルに書き込み
-        ttk.Button(btn_frame, text='保存', command=self.on_save).grid(row=0, column=0, padx=5)
-        # 「設定ファイルを開く」ボタンで設定ファイルをエディタで開く
-        ttk.Button(btn_frame, text='設定ファイルを開く', command=self.open_config).grid(row=0, column=1, padx=5)
-        # 「終了」ボタンでアプリケーションを終了する
-        ttk.Button(btn_frame, text='終了', command=self.destroy).grid(row=0, column=2, padx=5)
-
-    # ディレクトリ変更用の関数
-    def change_dir(self, key, idx):
-        # ユーザーにディレクトリを選択させるダイアログを表示
-        new_path = filedialog.askdirectory()
-        if not new_path:
-            return  # キャンセルされた場合は何もせず終了
-        # 選択されたディレクトリを設定データに更新
-        self.config_data[key] = new_path
-        # 関連するラジオボタンの表示テキストと値を更新する
-        for rb, rb_key in self.dir_radios:
-            if rb_key == key:
-                rb.config(text=f'候補{idx}: {new_path}', value=new_path)
-        # 選択中のディレクトリ変数も更新
-        self.dir_var.set(new_path)
-
-    # ffmpegパス選択用の関数
     def choose_ffmpeg(self):
-        # ファイル選択ダイアログを開き、実行可能ファイルの選択を促す
-        path = filedialog.askopenfilename(filetypes=[('Executable', '*.exe'), ('All files', '*.*')])
+        path = filedialog.askopenfilename(
+            title='ffmpegの実行ファイルを選択',
+            filetypes=[('Executable', '*.exe'), ('All files', '*.*')]
+        )
         if path:
-            # 選択されたパスを設定変数にセット
             self.ffmpeg_var.set(path)
 
-    # 設定ファイルを外部プログラムで開くための関数
     def open_config(self):
         try:
-            # OSに応じた方法で設定ファイルを開く
-            if os.name == 'nt':  # Windowsの場合
+            if os.name == 'nt':
                 os.startfile(CONFIG_FILE)
-            elif sys.platform == 'darwin':  # macOSの場合
+            elif sys.platform == 'darwin':
                 subprocess.Popen(['open', str(CONFIG_FILE)])
-            else:  # Linuxなどの場合
+            else:
                 subprocess.Popen(['xdg-open', str(CONFIG_FILE)])
         except Exception as e:
-            # エラー発生時にはエラーダイアログでユーザーに通知
             messagebox.showerror('エラー', f'設定ファイルを開けませんでした: {e}')
 
-    # 設定内容を保存するための関数
     def on_save(self):
-        # GUI上の各設定値をconfig_dataに反映させる
-        self.config_data['default_directory'] = self.dir_var.get()
-        self.config_data['default_format'] = self.format_var.get()
+        # GUI上の設定値を設定データに反映
+        directories = []
+        for widgets in self.dir_widgets:
+            path = widgets['path_var'].get().strip()
+            format_val = widgets['format_var'].get()
+            if path:  # 空でないパスのみ保存
+                directories.append({"path": path, "format": format_val})
+        
+        if not directories:
+            messagebox.showwarning('警告', '最低1つのディレクトリを設定してください。')
+            return
+        
+        self.config_data['directories'] = directories
+        self.config_data['default_directory_index'] = min(self.dir_var.get(), len(directories) - 1)
+        self.config_data['interactive_selection'] = self.interactive_var.get()
         self.config_data['ffmpeg_path'] = self.ffmpeg_var.get()
         self.config_data['download_subtitles'] = self.sub_dl_var.get()
         self.config_data['embed_subtitles'] = self.sub_embed_var.get()
-        self.config_data['mkdir_list']=self.makedir_var.get()
-        # 設定ファイルに書き込む
-        save_config(self.config_data)
-        # ユーザーへ保存完了の通知を表示
-        messagebox.showinfo('保存', '設定を保存しました。')
+        self.config_data['makedirector'] = self.makedir_var.get()
+        
+        try:
+            save_config(self.config_data)
+            messagebox.showinfo('保存完了', '設定を保存しました。')
+        except Exception as e:
+            messagebox.showerror('エラー', f'設定の保存に失敗しました: {e}')
 
-# メイン処理: スクリプトとして直接実行された場合、GUIを起動
+# メイン処理
 if __name__ == '__main__':
     app = ConfigGUI()
     app.mainloop()
