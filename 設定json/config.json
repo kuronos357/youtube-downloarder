@@ -17,8 +17,12 @@
             "format": "webm"
         },
         {
-            "path": "/mnt/chromeos/removable/500GB/ダウンロード",
-            "format": "webm"
+            "path": "/mnt/chromeos/removable/500GB/ダウンロード/BGM",
+            "format": "mp3"
+        },
+        {
+            "path": "/mnt/chromeos/removable/500GB/ダウンロード/Movies",
+            "format": "mp4"
         }
     ],
     "default_directory_index": 2,

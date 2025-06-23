@@ -1,8 +1,8 @@
-import json  # JSON形式で設定を保存・読み込みするためのモジュール
+import json  
 import os
 import sys
 import subprocess  # システムコマンドを実行するためのモジュール
-import tkinter as tk  # GUIの作成に使用
+import tkinter as tk  
 from tkinter import ttk, filedialog, messagebox  # GUI用のウィジェットやダイアログ
 from pathlib import Path  # ファイルパス操作用
 
@@ -118,7 +118,7 @@ class ConfigGUI(tk.Tk):
         
         ttk.Radiobutton(
             mode_frame, 
-            text="デフォルト設定を使用（自動選択）", 
+            text="json準拠の設定", 
             variable=self.interactive_var, 
             value=False
         ).pack(anchor='w')
@@ -153,9 +153,9 @@ class ConfigGUI(tk.Tk):
         bottom_btn_frame = ttk.Frame(main_frame)
         bottom_btn_frame.pack(fill='x', pady=(10, 0))
         
-        ttk.Button(bottom_btn_frame, text='保存', command=self.on_save).pack(side='left', padx=(0, 5))
+        # 「保存して終了」ボタンに統合
+        ttk.Button(bottom_btn_frame, text='保存して終了', command=self.on_save_and_exit).pack(side='left', padx=(0, 5))
         ttk.Button(bottom_btn_frame, text='設定ファイルを開く', command=self.open_config).pack(side='left', padx=5)
-        ttk.Button(bottom_btn_frame, text='終了', command=self.destroy).pack(side='right')
 
     def _build_directory_list(self):
         # 既存のウィジェットをクリア
@@ -311,9 +311,13 @@ class ConfigGUI(tk.Tk):
         
         try:
             save_config(self.config_data)
-            messagebox.showinfo('保存完了', '設定を保存しました。')
+            print('保存完了', '設定を保存しました。')
         except Exception as e:
             messagebox.showerror('エラー', f'設定の保存に失敗しました: {e}')
+
+    def on_save_and_exit(self):
+        self.on_save()
+        self.destroy()
 
 # メイン処理
 if __name__ == '__main__':
