@@ -10,22 +10,28 @@
         },
         {
             "path": "/mnt/chromeos/PlayFiles/Movies",
-            "format": "mp4"
+            "format": "webm"
         },
         {
             "path": "/mnt/chromeos/PlayFiles/Podcasts",
             "format": "webm"
         },
         {
-            "path": "/mnt/chromeos/removable/500GB/ダウンロード/BGM",
+            "path": "/mnt/chromeos/removable/500GB/Play/BGM",
             "format": "mp3"
         },
         {
-            "path": "/mnt/chromeos/removable/500GB/ダウンロード/Movies",
-            "format": "mp4"
+            "path": "/mnt/chromeos/removable/500GB/Play/Movies",
+            "format": "webm"
+        },
+        {
+            "path": "/mnt/chromeos/removable/500GB/Play/Podcasts",
+            "format": "webm"
         }
     ],
     "default_directory_index": 2,
     "makedirector": true,
-    "interactive_selection": false
+    "interactive_selection": false,
+    "log_file_path": "/mnt/chromeos/GoogleDrive/MyDrive/プログラミング/Log-dir/youtubeダウンローダー/log.json",
+    "enable_logging": true
 }

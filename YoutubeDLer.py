@@ -2,6 +2,7 @@ import os
 import json
 import pyperclip
 from yt_dlp import YoutubeDL
+from datetime import datetime
 
 file_path = "python/youtube-downloarder/設定json/config.json"  # 設定ファイルのパス
 
@@ -12,6 +13,78 @@ def read_json(file_path):
     return data
 
 data = read_json(file_path)
+
+# ログ関連の関数
+def log_download(url, output_dir, format_choice, status, error_message=None, filename=None):
+    """ダウンロードログを記録する関数"""
+    # ログ機能が無効の場合は何もしない
+    if not data.get('enable_logging', True):
+        return
+    
+    log_file_path = data.get('log_file_path', 'python/youtube-downloarder/download_log.json')
+    
+    # ログエントリを作成
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "url": url,
+        "output_directory": output_dir,
+        "format": format_choice,
+        "status": status,  # "success", "error", "skipped"
+        "filename": filename,
+        "error_message": error_message
+    }
+    
+    # 既存のログを読み込み
+    logs = []
+    if os.path.exists(log_file_path):
+        try:
+            with open(log_file_path, 'r', encoding='utf-8') as f:
+                logs = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            logs = []
+    
+    # 新しいログエントリを追加
+    logs.append(log_entry)
+    
+    # ログファイルのディレクトリが存在しない場合は作成
+    log_dir = os.path.dirname(os.path.abspath(log_file_path))
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+    
+    # ログファイルに書き込み
+    try:
+        with open(log_file_path, 'w', encoding='utf-8') as f:
+            json.dump(logs, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"ログの書き込みに失敗しました: {e}")
+
+def log_session_start(url, is_playlist=False):
+    """セッション開始のログを記録"""
+    if not data.get('enable_logging', True):
+        return
+    
+    session_type = "playlist" if is_playlist else "single_video"
+    log_download(
+        url=url,
+        output_dir="",
+        format_choice="",
+        status="session_start",
+        filename=f"Session started - {session_type}"
+    )
+
+def log_session_end(total_downloads, successful_downloads, failed_downloads):
+    """セッション終了のログを記録"""
+    if not data.get('enable_logging', True):
+        return
+    
+    summary = f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
+    log_download(
+        url="",
+        output_dir="",
+        format_choice="",
+        status="session_end",
+        filename=summary
+    )
 
 # デフォルトディレクトリとフォーマットを取得する関数
 def get_default_settings():
@@ -133,13 +206,30 @@ def download_video(url, output_dir, format_choice):
     ydl_opts = get_download_options(output_dir, format_choice)
     if not ydl_opts:
         print("無効なフォーマットが選択されています。")
-        return
+        log_download(url, output_dir, format_choice, "error", "無効なフォーマット")
+        return False
 
     with YoutubeDL(ydl_opts) as ydl:
         try:
+            # ダウンロード前に動画情報を取得してタイトルを取得
+            info = ydl.extract_info(url, download=False)
+            title = info.get('title', 'Unknown Title')
+            
+            # ダウンロード実行
             ydl.download([url])
+            
+            # 成功をログに記録
+            log_download(url, output_dir, format_choice, "success", filename=title)
+            print(f"✓ ダウンロード成功: {title}")
+            return True
+            
         except Exception as e:
-            print(f"エラーが発生しました: {e}")
+            error_msg = str(e)
+            print(f"✗ エラーが発生しました: {error_msg}")
+            
+            # エラーをログに記録
+            log_download(url, output_dir, format_choice, "error", error_msg)
+            return False
 
 # メイン処理
 def main():
@@ -148,6 +238,8 @@ def main():
         print("クリップボードにURLがありません。")
         return
 
+    print(f"処理対象URL: {video_url}")
+    
     # 対話的選択の設定を確認
     interactive_selection = data.get('interactive_selection', False)
     
@@ -169,11 +261,26 @@ def main():
     print(f"保存先: {output_dir}")
     print(f"形式: {format_choice}")
 
+    # ログ機能の状態を表示
+    if data.get('enable_logging', True):
+        log_file = data.get('log_file_path', 'python/youtube-downloarder/download_log.json')
+        print(f"ログ機能: 有効 ({log_file})")
+    else:
+        print("ログ機能: 無効")
+
+    # 統計用変数
+    total_downloads = 0
+    successful_downloads = 0
+    failed_downloads = 0
+
     # 再生リストの場合、個別の動画URLを取得
     if "playlist" in video_url:
+        log_session_start(video_url, is_playlist=True)
+        
         video_urls, playlist_title = get_video_urls(video_url)
         if not video_urls:
             print("再生リストから動画URLを取得できませんでした。")
+            log_download(video_url, output_dir, format_choice, "error", "再生リストからURL取得失敗")
             return
 
         # makedirectorの設定を確認してディレクトリ作成を決定
@@ -189,16 +296,41 @@ def main():
             final_output_dir = output_dir
             print("再生リストの動画を直接指定ディレクトリに保存します。")
 
-        print(f"再生リスト内の動画数: {len(video_urls)}")
+        total_downloads = len(video_urls)
+        print(f"再生リスト内の動画数: {total_downloads}")
+        
         for i, url in enumerate(video_urls, 1):
-            print(f"ダウンロード中 ({i}/{len(video_urls)}): {url}")
-            download_video(url, final_output_dir, format_choice)
+            print(f"\nダウンロード中 ({i}/{total_downloads}): ")
+            if download_video(url, final_output_dir, format_choice):
+                successful_downloads += 1
+            else:
+                failed_downloads += 1
     else:
         # 個別の動画URLの場合
+        log_session_start(video_url, is_playlist=False)
+        
         print("個別動画をダウンロードしています...")
-        download_video(video_url, output_dir, format_choice)
+        total_downloads = 1
+        if download_video(video_url, output_dir, format_choice):
+            successful_downloads = 1
+        else:
+            failed_downloads = 1
 
+    # セッション終了のログを記録
+    log_session_end(total_downloads, successful_downloads, failed_downloads)
+
+    # 結果サマリーを表示
+    print(f"\n{'='*50}")
     print("ダウンロード完了！")
+    print(f"総数: {total_downloads}, 成功: {successful_downloads}, 失敗: {failed_downloads}")
+    
+    if failed_downloads > 0:
+        print(f"⚠️ {failed_downloads}件のダウンロードに失敗しました。")
+        if data.get('enable_logging', True):
+            print("詳細はログファイルを確認してください。")
+    else:
+        print("✓ すべてのダウンロードが完了しました。")
+    print(f"{'='*50}")
 
 # ffmpegのパスを設定
 ffmpeg_path = data.get('ffmpeg_path', r'C:\ProgramData\chocolatey\bin\ffmpeg.exe')

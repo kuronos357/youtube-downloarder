@@ -21,7 +21,9 @@ DEFAULT_CONFIG = {
     "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
     "download_subtitles": False,
     "embed_subtitles": False,
-    "makedirector": True
+    "makedirector": True,
+    "enable_logging": True,  # ログ機能の有効/無効
+    "log_file_path": "python/youtube-downloarder/download_log.json"
 }
 
 # 設定ファイルを読み込む関数
@@ -44,6 +46,15 @@ def load_config():
                 # 古いキーを削除
                 for key in ['directory1', 'directory2', 'directory3', 'default_directory', 'default_format']:
                     config.pop(key, None)
+            
+            # ログファイルパスが設定されていない場合はデフォルトを追加
+            if 'log_file_path' not in config:
+                config['log_file_path'] = DEFAULT_CONFIG['log_file_path']
+            
+            # ログ有効フラグが設定されていない場合はデフォルトを追加
+            if 'enable_logging' not in config:
+                config['enable_logging'] = DEFAULT_CONFIG['enable_logging']
+            
             return config
     return DEFAULT_CONFIG.copy()
 
@@ -57,7 +68,7 @@ class ConfigGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x800')  # ウィンドウの初期サイズを設定
+        self.geometry('1000x1100')  # ウィンドウの初期サイズを少し大きく設定
         self.resizable(True, True)
         self.config_data = load_config()
         self.dir_widgets = []  # ディレクトリ用ウィジェットのリスト
@@ -71,6 +82,8 @@ class ConfigGUI(tk.Tk):
         self.sub_dl_var = tk.BooleanVar(value=self.config_data.get('download_subtitles', False))
         self.sub_embed_var = tk.BooleanVar(value=self.config_data.get('embed_subtitles', False))
         self.makedir_var = tk.BooleanVar(value=self.config_data.get('makedirector', True))
+        self.enable_logging_var = tk.BooleanVar(value=self.config_data.get('enable_logging', True))
+        self.log_path_var = tk.StringVar(value=self.config_data.get('log_file_path', ''))
 
     def _build_ui(self):
         # メインフレーム
@@ -149,6 +162,54 @@ class ConfigGUI(tk.Tk):
         ttk.Checkbutton(other_frame, text='字幕を埋め込み', variable=self.sub_embed_var).pack(anchor='w', pady=2)
         ttk.Checkbutton(other_frame, text='プレイリストの場合のディレクトリ作成する', variable=self.makedir_var).pack(anchor='w', pady=2)
 
+        # ログ設定セクション
+        log_config_frame = ttk.LabelFrame(main_frame, text="ログ設定", padding=5)
+        log_config_frame.pack(fill='x', pady=(0, 10))
+
+        # ログ有効/無効の設定
+        log_enable_frame = ttk.Frame(log_config_frame)
+        log_enable_frame.pack(fill='x', pady=(0, 5))
+        
+        self.log_checkbox = ttk.Checkbutton(
+            log_enable_frame, 
+            text='ログ機能を有効にする', 
+            variable=self.enable_logging_var,
+            command=self._on_logging_toggle
+        )
+        self.log_checkbox.pack(anchor='w')
+
+        # ログファイルパス設定
+        self.log_path_frame = ttk.Frame(log_config_frame)
+        self.log_path_frame.pack(fill='x', pady=(5, 0))
+        ttk.Label(self.log_path_frame, text='ログファイルパス:').pack(anchor='w')
+        
+        log_entry_frame = ttk.Frame(self.log_path_frame)
+        log_entry_frame.pack(fill='x', pady=(2, 0))
+        self.log_path_entry = ttk.Entry(log_entry_frame, textvariable=self.log_path_var)
+        self.log_path_entry.pack(side='left', fill='x', expand=True)
+        self.log_path_btn = ttk.Button(log_entry_frame, text='選択', command=self.choose_log_file)
+        self.log_path_btn.pack(side='right', padx=(5, 0))
+
+        # 初期状態でログ設定の有効/無効を反映
+        self._update_log_controls()
+
+        # ログ管理セクション
+        log_section = ttk.LabelFrame(main_frame, text="ログ管理", padding=5)
+        log_section.pack(fill='x', pady=(0, 10))
+        
+        log_btn_frame = ttk.Frame(log_section)
+        log_btn_frame.pack(fill='x')
+        
+        self.open_log_btn = ttk.Button(log_btn_frame, text='ログファイルを開く', command=self.open_log_file)
+        self.open_log_btn.pack(side='left', padx=(0, 5))
+        self.open_folder_btn = ttk.Button(log_btn_frame, text='ログフォルダを開く', command=self.open_log_folder)
+        self.open_folder_btn.pack(side='left', padx=(0, 5))
+        self.clear_log_btn = ttk.Button(log_btn_frame, text='ログをクリア', command=self.clear_log)
+        self.clear_log_btn.pack(side='left', padx=(0, 5))
+
+        # ログ管理ボタンの初期状態を設定
+        self._update_log_management_buttons()
+
         # ボタンフレーム
         bottom_btn_frame = ttk.Frame(main_frame)
         bottom_btn_frame.pack(fill='x', pady=(10, 0))
@@ -156,6 +217,34 @@ class ConfigGUI(tk.Tk):
         # 「保存して終了」ボタンに統合
         ttk.Button(bottom_btn_frame, text='保存して終了', command=self.on_save_and_exit).pack(side='left', padx=(0, 5))
         ttk.Button(bottom_btn_frame, text='設定ファイルを開く', command=self.open_config).pack(side='left', padx=5)
+
+    def _on_logging_toggle(self):
+        """ログ機能の有効/無効に応じてUIを更新"""
+        self._update_log_controls()
+        self._update_log_management_buttons()
+
+    def _update_log_controls(self):
+        """ログ設定コントロールの有効/無効を更新"""
+        is_enabled = self.enable_logging_var.get()
+        
+        # ログファイルパス関連のコントロール
+        state = 'normal' if is_enabled else 'disabled'
+        self.log_path_entry.config(state=state)
+        self.log_path_btn.config(state=state)
+        
+        # フレーム内のラベルの色も変更
+        for widget in self.log_path_frame.winfo_children():
+            if isinstance(widget, ttk.Label):
+                widget.config(foreground='black' if is_enabled else 'gray')
+
+    def _update_log_management_buttons(self):
+        """ログ管理ボタンの有効/無効を更新"""
+        is_enabled = self.enable_logging_var.get()
+        state = 'normal' if is_enabled else 'disabled'
+        
+        self.open_log_btn.config(state=state)
+        self.open_folder_btn.config(state=state)
+        self.clear_log_btn.config(state=state)
 
     def _build_directory_list(self):
         # 既存のウィジェットをクリア
@@ -277,6 +366,93 @@ class ConfigGUI(tk.Tk):
         if path:
             self.ffmpeg_var.set(path)
 
+    def choose_log_file(self):
+        # ログファイルの保存先を選択（新規作成も含む）
+        path = filedialog.asksaveasfilename(
+            title='ログファイルの保存先を選択',
+            defaultextension='.json',
+            filetypes=[('JSON files', '*.json'), ('All files', '*.*')]
+        )
+        if path:
+            self.log_path_var.set(path)
+
+    def open_log_file(self):
+        if not self.enable_logging_var.get():
+            messagebox.showinfo('情報', 'ログ機能が無効になっています。')
+            return
+            
+        log_path = self.log_path_var.get()
+        if not log_path:
+            messagebox.showwarning('警告', 'ログファイルパスが設定されていません。')
+            return
+        
+        if not os.path.exists(log_path):
+            messagebox.showinfo('情報', 'ログファイルがまだ作成されていません。\nダウンロードを実行するとログファイルが作成されます。')
+            return
+        
+        try:
+            if os.name == 'nt':
+                os.startfile(log_path)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', log_path])
+            else:
+                subprocess.Popen(['xdg-open', log_path])
+        except Exception as e:
+            messagebox.showerror('エラー', f'ログファイルを開けませんでした: {e}')
+
+    def open_log_folder(self):
+        if not self.enable_logging_var.get():
+            messagebox.showinfo('情報', 'ログ機能が無効になっています。')
+            return
+            
+        log_path = self.log_path_var.get()
+        if not log_path:
+            messagebox.showwarning('警告', 'ログファイルパスが設定されていません。')
+            return
+        
+        log_dir = os.path.dirname(os.path.abspath(log_path))
+        if not os.path.exists(log_dir):
+            # ディレクトリが存在しない場合は作成するか確認
+            if messagebox.askyesno('確認', f'ログディレクトリが存在しません。\n作成しますか？\n\n{log_dir}'):
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except Exception as e:
+                    messagebox.showerror('エラー', f'ディレクトリの作成に失敗しました: {e}')
+                    return
+            else:
+                return
+        
+        try:
+            if os.name == 'nt':
+                os.startfile(log_dir)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', log_dir])
+            else:
+                subprocess.Popen(['xdg-open', log_dir])
+        except Exception as e:
+            messagebox.showerror('エラー', f'ログフォルダを開けませんでした: {e}')
+
+    def clear_log(self):
+        if not self.enable_logging_var.get():
+            messagebox.showinfo('情報', 'ログ機能が無効になっています。')
+            return
+            
+        log_path = self.log_path_var.get()
+        if not log_path:
+            messagebox.showwarning('警告', 'ログファイルパスが設定されていません。')
+            return
+        
+        if not os.path.exists(log_path):
+            messagebox.showinfo('情報', 'ログファイルが存在しないため、クリアする必要がありません。')
+            return
+        
+        if messagebox.askyesno('確認', 'ログファイルをクリア（削除）しますか？\nこの操作は元に戻せません。'):
+            try:
+                os.remove(log_path)
+                messagebox.showinfo('完了', 'ログファイルをクリアしました。')
+            except Exception as e:
+                messagebox.showerror('エラー', f'ログファイルのクリアに失敗しました: {e}')
+
     def open_config(self):
         try:
             if os.name == 'nt':
@@ -301,6 +477,11 @@ class ConfigGUI(tk.Tk):
             messagebox.showwarning('警告', '最低1つのディレクトリを設定してください。')
             return
         
+        # ログが有効でパスが設定されていない場合の警告
+        if self.enable_logging_var.get() and not self.log_path_var.get().strip():
+            if not messagebox.askyesno('確認', 'ログ機能が有効ですが、ログファイルパスが設定されていません。\nこのまま保存しますか？'):
+                return
+        
         self.config_data['directories'] = directories
         self.config_data['default_directory_index'] = min(self.dir_var.get(), len(directories) - 1)
         self.config_data['interactive_selection'] = self.interactive_var.get()
@@ -308,10 +489,12 @@ class ConfigGUI(tk.Tk):
         self.config_data['download_subtitles'] = self.sub_dl_var.get()
         self.config_data['embed_subtitles'] = self.sub_embed_var.get()
         self.config_data['makedirector'] = self.makedir_var.get()
+        self.config_data['enable_logging'] = self.enable_logging_var.get()
+        self.config_data['log_file_path'] = self.log_path_var.get()
         
         try:
             save_config(self.config_data)
-            print('保存完了', '設定を保存しました。')
+            messagebox.showinfo('保存完了', '設定を保存しました。')
         except Exception as e:
             messagebox.showerror('エラー', f'設定の保存に失敗しました: {e}')
 
