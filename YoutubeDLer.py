@@ -60,7 +60,7 @@ def write_session_log():
     if not data.get('enable_logging', True) or not session_info:
         return
     
-    log_file_path = data.get('log_file_path', 'Project/youtube-downloarder/download_log.json')
+    log_file_path = data.get('log_file_path', file_path)
     
     # 既存のログを読み込み
     existing_logs = []

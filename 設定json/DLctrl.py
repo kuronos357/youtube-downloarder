@@ -11,19 +11,23 @@ CONFIG_FILE = Path(__file__).parent / 'config.json'
 
 # 設定ファイルが存在しない場合のデフォルト設定
 DEFAULT_CONFIG = {
-    "directories": [
-        {"path": "/mnt/chromeos/PlayFiles/Music/BGM", "format": "mp3"},
-        {"path": "/mnt/chromeos/PlayFiles/Movies", "format": "mp4"},
-        {"path": "/mnt/chromeos/PlayFiles/Podcasts", "format": "mp3"}
-    ],
-    "default_directory_index": 0,
-    "interactive_selection": False,
     "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
     "download_subtitles": False,
     "embed_subtitles": False,
+    "mkdir_list": True,
+    "directories": [
+        {"path": "/mnt/chromeos/PlayFiles/Music/BGM","format": "mp3"},
+        {"path": "/mnt/chromeos/PlayFiles/Movies","format": "webm"},
+        {"path": "/mnt/chromeos/PlayFiles/Podcasts","format": "webm"},
+        {"path": "/mnt/chromeos/removable/500GB/Play/BGM","format": "mp3"},
+        {"path": "/mnt/chromeos/removable/500GB/Play/Movies","format": "webm"},
+        {"path": "/mnt/chromeos/removable/500GB/Play/Podcasts","format": "webm"}
+    ],
+    "default_directory_index": 2,
     "makedirector": True,
-    "enable_logging": True,  # ログ機能の有効/無効
-    "log_file_path": "python/youtube-downloarder/download_log.json"
+    "interactive_selection": False,
+    "log_file_path": "/mnt/chromeos/GoogleDrive/MyDrive/プログラミング/Log-dir/youtubeダウンローダー/log.json",
+    "enable_logging": True
 }
 
 # 設定ファイルを読み込む関数
@@ -46,10 +50,6 @@ def load_config():
                 # 古いキーを削除
                 for key in ['directory1', 'directory2', 'directory3', 'default_directory', 'default_format']:
                     config.pop(key, None)
-            
-            # ログファイルパスが設定されていない場合はデフォルトを追加
-            if 'log_file_path' not in config:
-                config['log_file_path'] = DEFAULT_CONFIG['log_file_path']
             
             # ログ有効フラグが設定されていない場合はデフォルトを追加
             if 'enable_logging' not in config:
