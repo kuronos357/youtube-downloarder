@@ -14,37 +14,65 @@ def read_json(file_path):
 
 data = read_json(file_path)
 
-# ログ関連の関数
-def log_download(url, output_dir, format_choice, status, error_message=None, filename=None):
-    """ダウンロードログを記録する関数"""
-    # ログ機能が無効の場合は何もしない
-    if not data.get('enable_logging', True):
+# セッション情報を保持するグローバル変数
+session_info = {}
+
+def initialize_session(url, output_dir, format_choice):
+    """セッション開始時に情報を初期化"""
+    global session_info
+    session_info = {
+        "タイムスタンプ": datetime.now().isoformat(),
+        "URL": url,
+        "出力ディレクトリ": output_dir,
+        "形式": format_choice,
+        "ステータス": "success",  # デフォルトは成功、エラーがあれば後で変更
+        "ファイル名": "",
+        "成否とエラーメッセージ": ""
+    }
+
+def update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages=None, filenames=None):
+    """セッション終了時に結果を更新"""
+    global session_info
+    
+    # ステータスを決定
+    if failed_downloads > 0:
+        session_info["ステータス"] = "error"
+    else:
+        session_info["ステータス"] = "success"
+    
+    # ファイル名を設定（複数の場合は最初のもの、または代表的なもの）
+    if filenames and len(filenames) > 0:
+        if len(filenames) == 1:
+            session_info["ファイル名"] = filenames[0]
+        else:
+            session_info["ファイル名"] = f"{filenames[0]} 他{len(filenames)-1}件"
+    
+    # 成否とエラーメッセージを設定
+    summary = f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
+    if failed_downloads > 0 and error_messages:
+        # エラーがある場合はエラーメッセージも含める
+        session_info["成否とエラーメッセージ"] = f"{summary}, Errors: {'; '.join(error_messages[:3])}"  # 最初の3つのエラーのみ
+    else:
+        session_info["成否とエラーメッセージ"] = summary
+
+def write_session_log():
+    """セッション終了時に1つのログエントリを書き込み"""
+    if not data.get('enable_logging', True) or not session_info:
         return
     
     log_file_path = data.get('log_file_path', 'python/youtube-downloarder/download_log.json')
     
-    # ログエントリを作成
-    log_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "url": url,
-        "output_directory": output_dir,
-        "format": format_choice,
-        "status": status,  # "success", "error", "skipped", "session_start", "session_end"
-        "filename": filename,
-        "error_message": error_message
-    }
-    
     # 既存のログを読み込み
-    logs = []
+    existing_logs = []
     if os.path.exists(log_file_path):
         try:
             with open(log_file_path, 'r', encoding='utf-8') as f:
-                logs = json.load(f)
+                existing_logs = json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
-            logs = []
+            existing_logs = []
     
-    # 新しいログエントリを追加
-    logs.append(log_entry)
+    # 新しいセッションログを既存ログに追加
+    existing_logs.append(session_info)
     
     # ログファイルのディレクトリが存在しない場合は作成
     log_dir = os.path.dirname(os.path.abspath(log_file_path))
@@ -54,37 +82,10 @@ def log_download(url, output_dir, format_choice, status, error_message=None, fil
     # ログファイルに書き込み
     try:
         with open(log_file_path, 'w', encoding='utf-8') as f:
-            json.dump(logs, f, indent=2, ensure_ascii=False)
+            json.dump(existing_logs, f, indent=2, ensure_ascii=False)
+        print(f"ログを書き込みました: 1件のエントリ")
     except Exception as e:
         print(f"ログの書き込みに失敗しました: {e}")
-
-def log_session_start(url, output_dir, format_choice, is_playlist=False):
-    """セッション開始のログを記録"""
-    if not data.get('enable_logging', True):
-        return
-    
-    session_type = "playlist" if is_playlist else "single_video"
-    log_download(
-        url=url,
-        output_dir=output_dir,  # 実際の出力ディレクトリを記録
-        format_choice=format_choice,  # 実際のフォーマットを記録
-        status="session_start",
-        filename=f"Session started - {session_type}"
-    )
-
-def log_session_end(url, output_dir, format_choice, total_downloads, successful_downloads, failed_downloads):
-    """セッション終了のログを記録"""
-    if not data.get('enable_logging', True):
-        return
-    
-    summary = f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
-    log_download(
-        url=url,  # セッション開始時のURLを記録
-        output_dir=output_dir,  # 実際の出力ディレクトリを記録
-        format_choice=format_choice,  # 実際のフォーマットを記録
-        status="session_end",
-        filename=summary
-    )
 
 # デフォルトディレクトリとフォーマットを取得する関数
 def get_default_settings():
@@ -206,8 +207,7 @@ def download_video(url, output_dir, format_choice):
     ydl_opts = get_download_options(output_dir, format_choice)
     if not ydl_opts:
         print("無効なフォーマットが選択されています。")
-        log_download(url, output_dir, format_choice, "error", "無効なフォーマット")
-        return False
+        return False, "無効なフォーマット", None
 
     with YoutubeDL(ydl_opts) as ydl:
         try:
@@ -218,18 +218,13 @@ def download_video(url, output_dir, format_choice):
             # ダウンロード実行
             ydl.download([url])
             
-            # 成功をログに記録
-            log_download(url, output_dir, format_choice, "success", filename=title)
             print(f"✓ ダウンロード成功: {title}")
-            return True
+            return True, None, title
             
         except Exception as e:
             error_msg = str(e)
             print(f"✗ エラーが発生しました: {error_msg}")
-            
-            # エラーをログに記録
-            log_download(url, output_dir, format_choice, "error", error_msg)
-            return False
+            return False, error_msg, None
 
 # メイン処理
 def main():
@@ -268,65 +263,81 @@ def main():
     else:
         print("ログ機能: 無効")
 
+    # セッション情報を初期化
+    initialize_session(video_url, output_dir, format_choice)
+
     # 統計用変数
     total_downloads = 0
     successful_downloads = 0
     failed_downloads = 0
-
-    # セッション開始のログを記録（設定確定後）
-    is_playlist = "playlist" in video_url
-    log_session_start(video_url, output_dir, format_choice, is_playlist)
+    error_messages = []
+    filenames = []
 
     try:
         # 再生リストの場合、個別の動画URLを取得
+        is_playlist = "playlist" in video_url
         if is_playlist:
             video_urls, playlist_title = get_video_urls(video_url)
             if not video_urls:
                 print("再生リストから動画URLを取得できませんでした。")
-                log_download(video_url, output_dir, format_choice, "error", "再生リストからURL取得失敗")
-                return
-
-            # makedirectorの設定を確認してディレクトリ作成を決定
-            makedirector = data.get('makedirector', True)
-            if makedirector:
-                # 再生リスト用のディレクトリを作成
-                playlist_dir = os.path.join(output_dir, playlist_title)
-                os.makedirs(playlist_dir, exist_ok=True)
-                final_output_dir = playlist_dir
-                print(f"再生リスト用ディレクトリを作成: {playlist_dir}")
+                error_messages.append("再生リストからURL取得失敗")
+                failed_downloads = 1
+                total_downloads = 1
             else:
-                # 直接指定されたディレクトリに保存
-                final_output_dir = output_dir
-                print("再生リストの動画を直接指定ディレクトリに保存します。")
-
-            total_downloads = len(video_urls)
-            print(f"再生リスト内の動画数: {total_downloads}")
-            
-            for i, url in enumerate(video_urls, 1):
-                print(f"\nダウンロード中 ({i}/{total_downloads}): ")
-                if download_video(url, final_output_dir, format_choice):
-                    successful_downloads += 1
+                # makedirectorの設定を確認してディレクトリ作成を決定
+                makedirector = data.get('makedirector', True)
+                if makedirector:
+                    # 再生リスト用のディレクトリを作成
+                    playlist_dir = os.path.join(output_dir, playlist_title)
+                    os.makedirs(playlist_dir, exist_ok=True)
+                    final_output_dir = playlist_dir
+                    print(f"再生リスト用ディレクトリを作成: {playlist_dir}")
                 else:
-                    failed_downloads += 1
+                    # 直接指定されたディレクトリに保存
+                    final_output_dir = output_dir
+                    print("再生リストの動画を直接指定ディレクトリに保存します。")
+
+                total_downloads = len(video_urls)
+                print(f"再生リスト内の動画数: {total_downloads}")
+                
+                for i, url in enumerate(video_urls, 1):
+                    print(f"\nダウンロード中 ({i}/{total_downloads}): ")
+                    success, error_msg, filename = download_video(url, final_output_dir, format_choice)
+                    if success:
+                        successful_downloads += 1
+                        if filename:
+                            filenames.append(filename)
+                    else:
+                        failed_downloads += 1
+                        if error_msg:
+                            error_messages.append(error_msg)
         else:
             # 個別の動画URLの場合
             print("個別動画をダウンロードしています...")
             total_downloads = 1
-            if download_video(video_url, output_dir, format_choice):
+            success, error_msg, filename = download_video(video_url, output_dir, format_choice)
+            if success:
                 successful_downloads = 1
+                if filename:
+                    filenames.append(filename)
             else:
                 failed_downloads = 1
+                if error_msg:
+                    error_messages.append(error_msg)
 
     except Exception as e:
         # 予期しないエラーの場合
         print(f"予期しないエラーが発生しました: {e}")
-        log_download(video_url, output_dir, format_choice, "error", f"予期しないエラー: {str(e)}")
+        error_messages.append(f"予期しないエラー: {str(e)}")
         failed_downloads = total_downloads if total_downloads > 0 else 1
         total_downloads = total_downloads if total_downloads > 0 else 1
 
     finally:
-        # セッション終了のログを記録（必ず実行される）
-        log_session_end(video_url, output_dir, format_choice, total_downloads, successful_downloads, failed_downloads)
+        # セッション結果を更新
+        update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages, filenames)
+        
+        # ログを書き込み
+        write_session_log()
 
         # 結果サマリーを表示
         print(f"\n{'='*50}")
