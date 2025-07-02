@@ -4,7 +4,7 @@ import pyperclip
 from yt_dlp import YoutubeDL
 from datetime import datetime
 
-file_path = "python/youtube-downloarder/設定json/config.json"  # 設定ファイルのパス
+file_path = "Project/youtube-downloarder/設定json/config.json"  # 設定ファイルのパス
 
 # jsonファイルを読み込む関数
 def read_json(file_path):
@@ -60,7 +60,7 @@ def write_session_log():
     if not data.get('enable_logging', True) or not session_info:
         return
     
-    log_file_path = data.get('log_file_path', 'python/youtube-downloarder/download_log.json')
+    log_file_path = data.get('log_file_path', 'Project/youtube-downloarder/download_log.json')
     
     # 既存のログを読み込み
     existing_logs = []
