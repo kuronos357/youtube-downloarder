@@ -4,7 +4,7 @@ import pyperclip
 from yt_dlp import YoutubeDL
 from datetime import datetime
 
-file_path = "Project/youtube-downloarder/設定json/config.json"  # 設定ファイルのパス
+file_path = "/home/kuronos357/programming/Project/youtube-downloarder/設定・履歴/config.json"  # 設定ファイルのパス
 
 # jsonファイルを読み込む関数
 def read_json(file_path):
