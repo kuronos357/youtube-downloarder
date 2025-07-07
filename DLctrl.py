@@ -7,7 +7,7 @@ from tkinter import ttk, filedialog, messagebox  # GUI用のウィジェット�
 from pathlib import Path  # ファイルパス操作用
 
 # 設定ファイルのパスを生成（現在のファイルと同じディレクトリに配置）
-CONFIG_FILE = Path(__file__).parent / 'config.json'
+CONFIG_FILE = Path(__file__).parent / '設定・履歴/config.json'
 
 # 設定ファイルが存在しない場合のデフォルト設定
 DEFAULT_CONFIG = {
