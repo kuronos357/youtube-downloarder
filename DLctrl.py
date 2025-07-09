@@ -11,11 +11,14 @@ CONFIG_FILE = Path(__file__).parent / '設定・履歴/config.json'
 
 # OSに応じたデフォルト設定を生成する関数
 def get_default_config():
+    # 共通のログファイルパス
+    log_file_path = str(Path(__file__).parent / '設定・履歴/log.json')
+    home_dir = Path.home()
+
     # Windowsの場合
     if os.name == 'nt':
-        home_dir = Path.home()
         return {
-            "ffmpeg_path": "C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+            "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
             "download_subtitles": False,
             "embed_subtitles": False,
             "mkdir_list": True,
@@ -27,10 +30,12 @@ def get_default_config():
             "default_directory_index": 1,
             "makedirector": True,
             "interactive_selection": False,
-            "log_file_path": str(home_dir / "Documents" / "youtube-downloader" / "log.json"),
-            "enable_logging": True
+            "log_file_path": log_file_path,
+            "enable_logging": True,
+            "enable_volume_adjustment": False,
+            "volume_level": 1.0
         }
-    # Linux (Chromebook) やその他のOSの場合
+    # Linux やその他のOSの場合
     else:
         return {
             "ffmpeg_path": "ffmpeg",  # PATHに通っていることを期待
@@ -38,50 +43,57 @@ def get_default_config():
             "embed_subtitles": False,
             "mkdir_list": True,
             "directories": [
-                {"path": "/mnt/chromeos/PlayFiles/Music/BGM", "format": "mp3"},
-                {"path": "/mnt/chromeos/PlayFiles/Movies", "format": "webm"},
-                {"path": "/mnt/chromeos/PlayFiles/Podcasts", "format": "webm"},
-                {"path": "/mnt/chromeos/removable/500GB/Play/BGM", "format": "mp3"},
-                {"path": "/mnt/chromeos/removable/500GB/Play/Movies", "format": "webm"},
-                {"path": "/mnt/chromeos/removable/500GB/Play/Podcasts", "format": "webm"}
+                {"path": str(home_dir / "Music"), "format": "mp3"},
+                {"path": str(home_dir / "Videos"), "format": "webm"},
+                {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
             ],
-            "default_directory_index": 2,
+            "default_directory_index": 1,
             "makedirector": True,
             "interactive_selection": False,
-            "log_file_path": "/mnt/chromeos/GoogleDrive/MyDrive/プログラミング/Log-dir/youtubeダウンローダー/log.json",
-            "enable_logging": True
+            "log_file_path": log_file_path,
+            "enable_logging": True,
+            "enable_volume_adjustment": False,
+            "volume_level": 1.0
         }
 
 # 設定ファイルを読み込む関数
 def load_config():
     if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            # 古い形式から新しい形式への変換
-            if 'directory1' in config:
-                directories = []
-                for i in range(1, 4):
-                    dir_key = f'directory{i}'
-                    if dir_key in config:
-                        directories.append({
-                            "path": config[dir_key],
-                            "format": config.get('default_format', 'mp3')
-                        })
-                config['directories'] = directories
-                config['default_directory_index'] = 0
-                # 古いキーを削除
-                for key in ['directory1', 'directory2', 'directory3', 'default_directory', 'default_format']:
-                    config.pop(key, None)
-            
-            # ログ有効フラグが設定されていない場合はデフォルトを追加
-            if 'enable_logging' not in config:
-                config['enable_logging'] = get_default_config()['enable_logging']
-            
-            return config
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except json.JSONDecodeError:
+            # 設定ファイルが壊れている場合はデフォルト設定を返す
+            return get_default_config().copy()
+
+        # 古い形式から新しい形式への変換
+        if 'directory1' in config:
+            directories = []
+            for i in range(1, 4):
+                dir_key = f'directory{i}'
+                if dir_key in config:
+                    directories.append({
+                        "path": config[dir_key],
+                        "format": config.get('default_format', 'mp3')
+                    })
+            config['directories'] = directories
+            config['default_directory_index'] = 0
+            # 古いキーを削除
+            for key in ['directory1', 'directory2', 'directory3', 'default_directory', 'default_format']:
+                config.pop(key, None)
+        
+        # 新しいキーが存在しない場合にデフォルト値を追加
+        default_conf = get_default_config()
+        for key, value in default_conf.items():
+            config.setdefault(key, value)
+        
+        return config
     return get_default_config().copy()
 
 # 設定ファイルに設定情報を書き込む関数
 def save_config(config):
+    # ディレクトリが存在しない場合は作成
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
@@ -106,6 +118,8 @@ class ConfigGUI(tk.Tk):
         self.makedir_var = tk.BooleanVar(value=self.config_data.get('makedirector', True))
         self.enable_logging_var = tk.BooleanVar(value=self.config_data.get('enable_logging', True))
         self.log_path_var = tk.StringVar(value=self.config_data.get('log_file_path', ''))
+        self.enable_volume_var = tk.BooleanVar(value=self.config_data.get('enable_volume_adjustment', False))
+        self.volume_level_var = tk.DoubleVar(value=self.config_data.get('volume_level', 1.0))
 
     def _build_ui(self):
         # メインフレーム
@@ -184,6 +198,33 @@ class ConfigGUI(tk.Tk):
         ttk.Checkbutton(other_frame, text='字幕を埋め込み', variable=self.sub_embed_var).pack(anchor='w', pady=2)
         ttk.Checkbutton(other_frame, text='プレイリストの場合のディレクトリ作成する', variable=self.makedir_var).pack(anchor='w', pady=2)
 
+        # 音量調整の設定
+        self.volume_check = ttk.Checkbutton(
+            other_frame,
+            text='音量を調整する',
+            variable=self.enable_volume_var,
+            command=self._update_volume_controls
+        )
+        self.volume_check.pack(anchor='w', pady=(10, 2))
+
+        self.volume_frame = ttk.Frame(other_frame)
+        self.volume_frame.pack(fill='x', padx=20, pady=(0, 5))
+
+        self.volume_label_var = tk.StringVar(value=f"{self.volume_level_var.get():.2f}")
+        
+        self.volume_scale = ttk.Scale(
+            self.volume_frame,
+            from_=0.0,
+            to=2.0,
+            orient='horizontal',
+            variable=self.volume_level_var,
+            command=lambda s: self.volume_label_var.set(f"{float(s):.2f}")
+        )
+        self.volume_scale.pack(side='left', fill='x', expand=True)
+
+        self.volume_label = ttk.Label(self.volume_frame, textvariable=self.volume_label_var, width=5)
+        self.volume_label.pack(side='right')
+
         # ログ設定セクション
         log_config_frame = ttk.LabelFrame(main_frame, text="ログ設定", padding=5)
         log_config_frame.pack(fill='x', pady=(0, 10))
@@ -196,7 +237,7 @@ class ConfigGUI(tk.Tk):
             log_enable_frame, 
             text='ログ機能を有効にする', 
             variable=self.enable_logging_var,
-            command=self._on_logging_toggle
+            command=self._update_log_controls
         )
         self.log_checkbox.pack(anchor='w')
 
@@ -212,9 +253,6 @@ class ConfigGUI(tk.Tk):
         self.log_path_btn = ttk.Button(log_entry_frame, text='選択', command=self.choose_log_file)
         self.log_path_btn.pack(side='right', padx=(5, 0))
 
-        # 初期状態でログ設定の有効/無効を反映
-        self._update_log_controls()
-
         # ログ管理セクション
         log_section = ttk.LabelFrame(main_frame, text="ログ管理", padding=5)
         log_section.pack(fill='x', pady=(0, 10))
@@ -229,21 +267,23 @@ class ConfigGUI(tk.Tk):
         self.clear_log_btn = ttk.Button(log_btn_frame, text='ログをクリア', command=self.clear_log)
         self.clear_log_btn.pack(side='left', padx=(0, 5))
 
-        # ログ管理ボタンの初期状態を設定
-        self._update_log_management_buttons()
-
         # ボタンフレーム
         bottom_btn_frame = ttk.Frame(main_frame)
         bottom_btn_frame.pack(fill='x', pady=(10, 0))
         
-        # 「保存して終了」ボタンに統合
         ttk.Button(bottom_btn_frame, text='保存して終了', command=self.on_save_and_exit).pack(side='left', padx=(0, 5))
         ttk.Button(bottom_btn_frame, text='設定ファイルを開く', command=self.open_config).pack(side='left', padx=5)
 
-    def _on_logging_toggle(self):
-        """ログ機能の有効/無効に応じてUIを更新"""
+        # 初期状態でUIコントロールの有効/無効を反映
         self._update_log_controls()
+        self._update_volume_controls()
         self._update_log_management_buttons()
+
+    def _update_volume_controls(self):
+        """音量調整コントロールの有効/無効を更新"""
+        state = 'normal' if self.enable_volume_var.get() else 'disabled'
+        self.volume_scale.config(state=state)
+        self.volume_label.config(foreground='black' if state == 'normal' else 'grey')
 
     def _update_log_controls(self):
         """ログ設定コントロールの有効/無効を更新"""
@@ -258,6 +298,8 @@ class ConfigGUI(tk.Tk):
         for widget in self.log_path_frame.winfo_children():
             if isinstance(widget, ttk.Label):
                 widget.config(foreground='black' if is_enabled else 'gray')
+        
+        self._update_log_management_buttons()
 
     def _update_log_management_buttons(self):
         """ログ管理ボタンの有効/無効を更新"""
@@ -286,7 +328,6 @@ class ConfigGUI(tk.Tk):
         row_frame = ttk.Frame(self.scrollable_frame)
         row_frame.pack(fill='x', pady=2, padx=5)
 
-        # すべてを1行に配置
         # ラジオボタン
         radio = ttk.Radiobutton(
             row_frame,
@@ -320,25 +361,22 @@ class ConfigGUI(tk.Tk):
         )
         select_btn.pack(side='right', padx=(5, 0))
 
-        # 削除ボタン（2個以上ある場合のみ表示）
-        delete_btn = None
-        if len(self.config_data['directories']) > 1:
-            delete_btn = ttk.Button(
-                row_frame,
-                text='削除',
-                command=lambda idx=index: self.delete_directory(idx)
-            )
-            delete_btn.pack(side='right', padx=(5, 0))
+        # 削除ボタン
+        delete_btn = ttk.Button(
+            row_frame,
+            text='削除',
+            command=lambda idx=index: self.delete_directory(idx)
+        )
+        delete_btn.pack(side='right', padx=(5, 0))
+        # 1個しかない場合は無効化
+        if len(self.config_data['directories']) <= 1:
+            delete_btn.config(state='disabled')
 
         # ウィジェットを保存
         widgets = {
-            'frame': row_frame,
-            'radio': radio,
-            'path_var': path_var,
-            'path_entry': path_entry,
-            'format_var': format_var,
-            'format_combo': format_combo,
-            'select_btn': select_btn,
+            'frame': row_frame, 'radio': radio, 'path_var': path_var,
+            'path_entry': path_entry, 'format_var': format_var,
+            'format_combo': format_combo, 'select_btn': select_btn,
             'delete_btn': delete_btn
         }
         self.dir_widgets.append(widgets)
@@ -349,34 +387,31 @@ class ConfigGUI(tk.Tk):
         self.config_data['directories'].append(new_dir)
         self._build_directory_list()
         
-        # 追加されたことを視覚的に示す
-        messagebox.showinfo('追加完了', f'新しいディレクトリ候補{len(self.config_data["directories"])}を追加しました。\nパスを設定してください。')
+        messagebox.showinfo('追加完了', f'新しいディレクトリ候補{len(self.config_data["directories"])}を追加しました.\nパスを設定してください。')
 
     def delete_directory(self, index):
-        # ディレクトリを削除（最低1個は残す）
         if len(self.config_data['directories']) <= 1:
             messagebox.showwarning('警告', '最低1つのディレクトリは必要です。')
             return
         
-        # 確認ダイアログ
         dir_path = self.config_data['directories'][index]['path']
         dir_name = dir_path if dir_path else f"候補{index + 1}"
         
         if messagebox.askyesno('確認', f'"{dir_name}"を削除しますか？'):
             self.config_data['directories'].pop(index)
             
-            # 選択中のインデックスを調整
             current_index = self.dir_var.get()
-            if current_index >= len(self.config_data['directories']):
-                self.dir_var.set(len(self.config_data['directories']) - 1)
+            if current_index == index:
+                self.dir_var.set(0)
             elif current_index > index:
                 self.dir_var.set(current_index - 1)
             
             self._build_directory_list()
 
     def change_dir(self, index):
-        # ディレクトリ選択ダイアログ
-        new_path = filedialog.askdirectory(title=f'候補{index + 1}のディレクトリを選択')
+        new_path = filedialog.askdirectory(
+            title=f'候補{index + 1}のディレクトリを選択'
+        )
         if new_path:
             self.dir_widgets[index]['path_var'].set(new_path)
 
@@ -389,7 +424,6 @@ class ConfigGUI(tk.Tk):
             self.ffmpeg_var.set(path)
 
     def choose_log_file(self):
-        # ログファイルの保存先を選択（新規作成も含む）
         path = filedialog.asksaveasfilename(
             title='ログファイルの保存先を選択',
             defaultextension='.json',
@@ -397,6 +431,17 @@ class ConfigGUI(tk.Tk):
         )
         if path:
             self.log_path_var.set(path)
+
+    def _open_path(self, path):
+        try:
+            if os.name == 'nt':
+                os.startfile(path)
+            elif sys.platform == 'darwin':
+                subprocess.run(['open', path], check=True)
+            else:
+                subprocess.run(['xdg-open', path], check=True)
+        except Exception as e:
+            messagebox.showerror('エラー', f'パスを開けませんでした: {e}\nパス: {path}')
 
     def open_log_file(self):
         if not self.enable_logging_var.get():
@@ -412,15 +457,7 @@ class ConfigGUI(tk.Tk):
             messagebox.showinfo('情報', 'ログファイルがまだ作成されていません。\nダウンロードを実行するとログファイルが作成されます。')
             return
         
-        try:
-            if os.name == 'nt':
-                os.startfile(log_path)
-            elif sys.platform == 'darwin':
-                subprocess.Popen(['open', log_path])
-            else:
-                subprocess.Popen(['xdg-open', log_path])
-        except Exception as e:
-            messagebox.showerror('エラー', f'ログファイルを開けませんでした: {e}')
+        self._open_path(log_path)
 
     def open_log_folder(self):
         if not self.enable_logging_var.get():
@@ -434,7 +471,6 @@ class ConfigGUI(tk.Tk):
         
         log_dir = os.path.dirname(os.path.abspath(log_path))
         if not os.path.exists(log_dir):
-            # ディレクトリが存在しない場合は作成するか確認
             if messagebox.askyesno('確認', f'ログディレクトリが存在しません。\n作成しますか？\n\n{log_dir}'):
                 try:
                     os.makedirs(log_dir, exist_ok=True)
@@ -444,15 +480,7 @@ class ConfigGUI(tk.Tk):
             else:
                 return
         
-        try:
-            if os.name == 'nt':
-                os.startfile(log_dir)
-            elif sys.platform == 'darwin':
-                subprocess.Popen(['open', log_dir])
-            else:
-                subprocess.Popen(['xdg-open', log_dir])
-        except Exception as e:
-            messagebox.showerror('エラー', f'ログフォルダを開けませんでした: {e}')
+        self._open_path(log_dir)
 
     def clear_log(self):
         if not self.enable_logging_var.get():
@@ -476,33 +504,23 @@ class ConfigGUI(tk.Tk):
                 messagebox.showerror('エラー', f'ログファイルのクリアに失敗しました: {e}')
 
     def open_config(self):
-        try:
-            if os.name == 'nt':
-                os.startfile(CONFIG_FILE)
-            elif sys.platform == 'darwin':
-                subprocess.Popen(['open', str(CONFIG_FILE)])
-            else:
-                subprocess.Popen(['xdg-open', str(CONFIG_FILE)])
-        except Exception as e:
-            messagebox.showerror('エラー', f'設定ファイルを開けませんでした: {e}')
+        self._open_path(str(CONFIG_FILE))
 
     def on_save(self):
-        # GUI上の設定値を設定データに反映
         directories = []
         for widgets in self.dir_widgets:
             path = widgets['path_var'].get().strip()
             format_val = widgets['format_var'].get()
-            if path:  # 空でないパスのみ保存
+            if path:
                 directories.append({"path": path, "format": format_val})
         
         if not directories:
             messagebox.showwarning('警告', '最低1つのディレクトリを設定してください。')
-            return
+            return False
         
-        # ログが有効でパスが設定されていない場合の警告
         if self.enable_logging_var.get() and not self.log_path_var.get().strip():
             if not messagebox.askyesno('確認', 'ログ機能が有効ですが、ログファイルパスが設定されていません。\nこのまま保存しますか？'):
-                return
+                return False
         
         self.config_data['directories'] = directories
         self.config_data['default_directory_index'] = min(self.dir_var.get(), len(directories) - 1)
@@ -513,16 +531,19 @@ class ConfigGUI(tk.Tk):
         self.config_data['makedirector'] = self.makedir_var.get()
         self.config_data['enable_logging'] = self.enable_logging_var.get()
         self.config_data['log_file_path'] = self.log_path_var.get()
+        self.config_data['enable_volume_adjustment'] = self.enable_volume_var.get()
+        self.config_data['volume_level'] = round(self.volume_level_var.get(), 2)
         
         try:
             save_config(self.config_data)
-            messagebox.showinfo('保存完了', '設定を保存しました。')
+            return True
         except Exception as e:
             messagebox.showerror('エラー', f'設定の保存に失敗しました: {e}')
+            return False
 
     def on_save_and_exit(self):
-        self.on_save()
-        self.destroy()
+        if self.on_save():
+            self.destroy()
 
 # メイン処理
 if __name__ == '__main__':
