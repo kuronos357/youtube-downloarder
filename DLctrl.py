@@ -113,7 +113,6 @@ class ConfigGUI(tk.Tk):
         self._create_mode_section(main_frame)
         self._create_other_settings_section(main_frame)
         self._create_log_config_section(main_frame)
-        self._create_log_management_section(main_frame)
         self._create_bottom_buttons(main_frame)
 
         self._update_log_controls()
@@ -186,18 +185,6 @@ class ConfigGUI(tk.Tk):
         self.log_path_btn = ttk.Button(log_entry_frame, text='選択', command=self.choose_log_file)
         self.log_path_btn.pack(side='right', padx=(5, 0))
 
-    def _create_log_management_section(self, parent):
-        log_section = ttk.LabelFrame(parent, text="ログ管理", padding=5)
-        log_section.pack(fill='x', pady=(0, 10))
-        log_btn_frame = ttk.Frame(log_section)
-        log_btn_frame.pack(fill='x')
-        self.open_log_btn = ttk.Button(log_btn_frame, text='ログファイルを開く', command=self.open_log_file)
-        self.open_log_btn.pack(side='left', padx=(0, 5))
-        self.open_folder_btn = ttk.Button(log_btn_frame, text='ログフォルダを開く', command=self.open_log_folder)
-        self.open_folder_btn.pack(side='left', padx=(0, 5))
-        self.clear_log_btn = ttk.Button(log_btn_frame, text='ログをクリア', command=self.clear_log)
-        self.clear_log_btn.pack(side='left', padx=(0, 5))
-
     def _create_bottom_buttons(self, parent):
         bottom_btn_frame = ttk.Frame(parent)
         bottom_btn_frame.pack(fill='x', pady=(10, 0))
@@ -213,12 +200,6 @@ class ConfigGUI(tk.Tk):
         state = 'normal' if self.enable_logging_var.get() else 'disabled'
         for widget in [self.log_path_entry, self.log_path_btn, self.log_path_label]:
             widget.config(state=state) if not isinstance(widget, ttk.Label) else widget.config(foreground='black' if state == 'normal' else 'gray')
-        self._update_log_management_buttons()
-
-    def _update_log_management_buttons(self):
-        state = 'normal' if self.enable_logging_var.get() else 'disabled'
-        for btn in [self.open_log_btn, self.open_folder_btn, self.clear_log_btn]:
-            btn.config(state=state)
 
     def _build_directory_list(self):
         for widgets in self.dir_widgets:
@@ -292,42 +273,6 @@ class ConfigGUI(tk.Tk):
                 subprocess.run(['xdg-open', path], check=True)
         except Exception as e:
             messagebox.showerror('エラー', f'パスを開けませんでした: {e}\nパス: {path}')
-
-    def open_log_file(self):
-        if not self.enable_logging_var.get(): return messagebox.showinfo('情報', 'ログ機能が無効です。')
-        log_path = self.log_path_var.get()
-        if not log_path: return messagebox.showwarning('警告', 'ログファイルパスが設定されていません。')
-        if not os.path.exists(log_path): return messagebox.showinfo('情報', 'ログはまだありません。')
-        self._open_path(log_path)
-
-    def open_log_folder(self):
-        if not self.enable_logging_var.get(): return messagebox.showinfo('情報', 'ログ機能が無効です。')
-        log_path = self.log_path_var.get()
-        if not log_path: return messagebox.showwarning('警告', 'ログファイルパスが設定されていません。')
-        
-        log_dir = Path(log_path).parent
-        if not log_dir.exists():
-            if messagebox.askyesno('確認', f'ログディレクトリが存在しません。\n作成しますか？\n\n{log_dir}'):
-                try:
-                    log_dir.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    return messagebox.showerror('エラー', f'ディレクトリの作成に失敗しました: {e}')
-            else:
-                return
-        self._open_path(log_dir)
-
-    def clear_log(self):
-        if not self.enable_logging_var.get(): return messagebox.showinfo('情報', 'ログ機能が無効です。')
-        log_path = self.log_path_var.get()
-        if not log_path: return messagebox.showwarning('警告', 'ログファイルパスが設定されていません。')
-        if not os.path.exists(log_path): return messagebox.showinfo('情報', 'ログファイルは存在しません。')
-        
-        if messagebox.askyesno('確認', 'ログファイルをクリア（削除）しますか？\nこの操作は元に戻せません。'):
-            try:
-                os.remove(log_path)
-                messagebox.showinfo('完了', 'ログファイルをクリアしました。')
-            except Exception as e:
-                messagebox.showerror('エラー', f'ログファイルのクリアに失敗しました: {e}')
 
     def open_config(self):
         self._open_path(CONFIG_FILE)
