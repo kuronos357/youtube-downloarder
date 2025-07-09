@@ -9,26 +9,48 @@ from pathlib import Path  # ファイルパス操作用
 # 設定ファイルのパスを生成（現在のファイルと同じディレクトリに配置）
 CONFIG_FILE = Path(__file__).parent / '設定・履歴/config.json'
 
-# 設定ファイルが存在しない場合のデフォルト設定
-DEFAULT_CONFIG = {
-    "ffmpeg_path": "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe",
-    "download_subtitles": False,
-    "embed_subtitles": False,
-    "mkdir_list": True,
-    "directories": [
-        {"path": "/mnt/chromeos/PlayFiles/Music/BGM","format": "mp3"},
-        {"path": "/mnt/chromeos/PlayFiles/Movies","format": "webm"},
-        {"path": "/mnt/chromeos/PlayFiles/Podcasts","format": "webm"},
-        {"path": "/mnt/chromeos/removable/500GB/Play/BGM","format": "mp3"},
-        {"path": "/mnt/chromeos/removable/500GB/Play/Movies","format": "webm"},
-        {"path": "/mnt/chromeos/removable/500GB/Play/Podcasts","format": "webm"}
-    ],
-    "default_directory_index": 2,
-    "makedirector": True,
-    "interactive_selection": False,
-    "log_file_path": "/mnt/chromeos/GoogleDrive/MyDrive/プログラミング/Log-dir/youtubeダウンローダー/log.json",
-    "enable_logging": True
-}
+# OSに応じたデフォルト設定を生成する関数
+def get_default_config():
+    # Windowsの場合
+    if os.name == 'nt':
+        home_dir = Path.home()
+        return {
+            "ffmpeg_path": "C:\ProgramData\chocolatey\bin\ffmpeg.exe",
+            "download_subtitles": False,
+            "embed_subtitles": False,
+            "mkdir_list": True,
+            "directories": [
+                {"path": str(home_dir / "Music"), "format": "mp3"},
+                {"path": str(home_dir / "Videos"), "format": "webm"},
+                {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
+            ],
+            "default_directory_index": 1,
+            "makedirector": True,
+            "interactive_selection": False,
+            "log_file_path": str(home_dir / "Documents" / "youtube-downloader" / "log.json"),
+            "enable_logging": True
+        }
+    # Linux (Chromebook) やその他のOSの場合
+    else:
+        return {
+            "ffmpeg_path": "ffmpeg",  # PATHに通っていることを期待
+            "download_subtitles": False,
+            "embed_subtitles": False,
+            "mkdir_list": True,
+            "directories": [
+                {"path": "/mnt/chromeos/PlayFiles/Music/BGM", "format": "mp3"},
+                {"path": "/mnt/chromeos/PlayFiles/Movies", "format": "webm"},
+                {"path": "/mnt/chromeos/PlayFiles/Podcasts", "format": "webm"},
+                {"path": "/mnt/chromeos/removable/500GB/Play/BGM", "format": "mp3"},
+                {"path": "/mnt/chromeos/removable/500GB/Play/Movies", "format": "webm"},
+                {"path": "/mnt/chromeos/removable/500GB/Play/Podcasts", "format": "webm"}
+            ],
+            "default_directory_index": 2,
+            "makedirector": True,
+            "interactive_selection": False,
+            "log_file_path": "/mnt/chromeos/GoogleDrive/MyDrive/プログラミング/Log-dir/youtubeダウンローダー/log.json",
+            "enable_logging": True
+        }
 
 # 設定ファイルを読み込む関数
 def load_config():
@@ -53,10 +75,10 @@ def load_config():
             
             # ログ有効フラグが設定されていない場合はデフォルトを追加
             if 'enable_logging' not in config:
-                config['enable_logging'] = DEFAULT_CONFIG['enable_logging']
+                config['enable_logging'] = get_default_config()['enable_logging']
             
             return config
-    return DEFAULT_CONFIG.copy()
+    return get_default_config().copy()
 
 # 設定ファイルに設定情報を書き込む関数
 def save_config(config):
