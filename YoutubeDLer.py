@@ -139,6 +139,9 @@ def get_download_options(dl_dir, format_choice):
     download_subtitles = data.get('download_subtitles', False)  # 字幕ダウンロード設定を取得
     embed_subtitles = data.get('embed_subtitles', False)  # 字幕埋め込み設定を取得
     
+    # 画質設定を取得 (デフォルトは 'best')
+    video_quality = data.get('video_quality', 'best')
+
     # 音量調整の設定を取得
     enable_volume_adjustment = data.get('enable_volume_adjustment', False)
     volume_level = data.get('volume_level', 1.0)  # デフォルト値：1.0（変更なし）
@@ -147,14 +150,23 @@ def get_download_options(dl_dir, format_choice):
         'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'),
     }
 
+    # 画質設定の情報を表示
+    print(f"画質: {video_quality}")
+
     # 音量調整の情報を表示
     if enable_volume_adjustment:
         print(f"音量調整: 有効 (レベル: {volume_level})")
     else:
         print("音量調整: 無効")
 
+    # 'best' 以外の画質指定があるか
+    quality_selector = ""
+    # isdigit()で数字かどうかをチェックし、'best'でないことを確認
+    if video_quality != 'best' and str(video_quality).isdigit():
+        quality_selector = f"[height<=?{video_quality}]"
+
     if format_choice == "mp4":  # mp4
-        options['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        options['format'] = f'bestvideo{quality_selector}[ext=mp4]+bestaudio[ext=m4a]/best{quality_selector}[ext=mp4]/best'
         
         # 音量調整が有効な場合
         if enable_volume_adjustment:
@@ -179,7 +191,7 @@ def get_download_options(dl_dir, format_choice):
         options['postprocessors'] = postprocessors
         
     elif format_choice == "webm":  # webm
-        options['format'] = 'bestvideo[ext=webm]+bestaudio[ext=webm]/best[ext=webm]/best'
+        options['format'] = f'bestvideo{quality_selector}[ext=webm]+bestaudio[ext=webm]/best{quality_selector}[ext=webm]/best'
         
         # 音量調整が有効な場合
         if enable_volume_adjustment:
@@ -417,4 +429,3 @@ if ffmpeg_path and os.path.exists(ffmpeg_path):
 
 if __name__ == "__main__":
     main()
-    

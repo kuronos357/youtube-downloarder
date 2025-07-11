@@ -15,6 +15,7 @@ def get_default_config():
     base_config = {
         "download_subtitles": False,
         "embed_subtitles": False,
+        "video_quality": "best",
         "mkdir_list": True,
         "makedirector": True,
         "interactive_selection": False,
@@ -31,7 +32,7 @@ def get_default_config():
     }
     
     if os.name == 'nt':
-        base_config["ffmpeg_path"] = "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe"
+        base_config["ffmpeg_path"] = "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
     else: # Linux or other
         base_config["ffmpeg_path"] = "ffmpeg"
         
@@ -87,6 +88,7 @@ class ConfigGUI(tk.Tk):
         self.ffmpeg_var = tk.StringVar(value=self.config_data.get('ffmpeg_path'))
         self.sub_dl_var = tk.BooleanVar(value=self.config_data.get('download_subtitles'))
         self.sub_embed_var = tk.BooleanVar(value=self.config_data.get('embed_subtitles'))
+        self.video_quality_var = tk.StringVar(value=self.config_data.get('video_quality', 'best'))
         self.makedir_var = tk.BooleanVar(value=self.config_data.get('makedirector'))
         self.enable_logging_var = tk.BooleanVar(value=self.config_data.get('enable_logging'))
         self.log_path_var = tk.StringVar(value=self.config_data.get('log_file_path'))
@@ -98,6 +100,7 @@ class ConfigGUI(tk.Tk):
             'ffmpeg_path': self.ffmpeg_var,
             'download_subtitles': self.sub_dl_var,
             'embed_subtitles': self.sub_embed_var,
+            'video_quality': self.video_quality_var,
             'makedirector': self.makedir_var,
             'enable_logging': self.enable_logging_var,
             'log_file_path': self.log_path_var,
@@ -156,6 +159,13 @@ class ConfigGUI(tk.Tk):
         ffmpeg_entry_frame.pack(fill='x', pady=(2, 0))
         ttk.Entry(ffmpeg_entry_frame, textvariable=self.ffmpeg_var).pack(side='left', fill='x', expand=True)
         ttk.Button(ffmpeg_entry_frame, text='選択', command=self.choose_ffmpeg).pack(side='right', padx=(5, 0))
+
+        quality_frame = ttk.Frame(other_frame)
+        quality_frame.pack(fill='x', pady=(5, 5))
+        ttk.Label(quality_frame, text='動画の画質:').pack(side='left', anchor='w')
+        quality_options = ['best', '1080', '720', '480', '360']
+        ttk.Combobox(quality_frame, textvariable=self.video_quality_var, values=quality_options).pack(side='left', padx=5)
+        ttk.Label(quality_frame, text='("best", "1080"など。指定解像度以下の最大画質)').pack(side='left', anchor='w')
 
         for text, var in [('字幕をダウンロード', self.sub_dl_var), ('字幕を埋め込み', self.sub_embed_var), ('プレイリストの場合のディレクトリ作成する', self.makedir_var)]:
             ttk.Checkbutton(other_frame, text=text, variable=var).pack(anchor='w', pady=2)
