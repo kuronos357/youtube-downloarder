@@ -1,3 +1,5 @@
+
+
 import json
 import os
 import sys
@@ -23,6 +25,11 @@ def get_default_config():
         "log_file_path": log_file_path,
         "enable_volume_adjustment": False,
         "volume_level": 1.0,
+        "enable_notion_upload": False,
+        "notion_api_key": "",
+        "notion_database_id": "",
+        "use_cookies": False,
+        "cookie_browser": "chrome",
         "directories": [
             {"path": str(home_dir / "Music"), "format": "mp3"},
             {"path": str(home_dir / "Videos"), "format": "webm"},
@@ -48,18 +55,6 @@ def load_config():
     except (json.JSONDecodeError, IOError):
         return get_default_config().copy()
 
-    # Migrate from old format if necessary
-    if 'directory1' in config:
-        directories = []
-        for i in range(1, 4):
-            if dir_key := f'directory{i}' in config:
-                directories.append({"path": config[dir_key], "format": config.get('default_format', 'mp3')})
-        config['directories'] = directories
-        config['default_directory_index'] = 0
-        for key in ['directory1', 'directory2', 'directory3', 'default_directory', 'default_format']:
-            config.pop(key, None)
-    
-    # Ensure all keys are present
     default_conf = get_default_config()
     for key, value in default_conf.items():
         config.setdefault(key, value)
@@ -75,7 +70,7 @@ class ConfigGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x1100')
+        self.geometry('1000x1300') # Adjusted height for new sections
         self.resizable(True, True)
         self.config_data = load_config()
         self.dir_widgets = []
@@ -94,6 +89,11 @@ class ConfigGUI(tk.Tk):
         self.log_path_var = tk.StringVar(value=self.config_data.get('log_file_path'))
         self.enable_volume_var = tk.BooleanVar(value=self.config_data.get('enable_volume_adjustment'))
         self.volume_level_var = tk.DoubleVar(value=self.config_data.get('volume_level'))
+        self.enable_notion_var = tk.BooleanVar(value=self.config_data.get('enable_notion_upload'))
+        self.notion_api_key_var = tk.StringVar(value=self.config_data.get('notion_api_key'))
+        self.notion_db_id_var = tk.StringVar(value=self.config_data.get('notion_database_id'))
+        self.use_cookies_var = tk.BooleanVar(value=self.config_data.get('use_cookies'))
+        self.cookie_browser_var = tk.StringVar(value=self.config_data.get('cookie_browser'))
 
         self.settings_map = {
             'interactive_selection': self.interactive_var,
@@ -106,6 +106,11 @@ class ConfigGUI(tk.Tk):
             'log_file_path': self.log_path_var,
             'enable_volume_adjustment': self.enable_volume_var,
             'volume_level': self.volume_level_var,
+            'enable_notion_upload': self.enable_notion_var,
+            'notion_api_key': self.notion_api_key_var,
+            'notion_database_id': self.notion_db_id_var,
+            'use_cookies': self.use_cookies_var,
+            'cookie_browser': self.cookie_browser_var,
         }
 
     def _build_ui(self):
@@ -115,11 +120,15 @@ class ConfigGUI(tk.Tk):
         self._create_directory_section(main_frame)
         self._create_mode_section(main_frame)
         self._create_other_settings_section(main_frame)
+        self._create_cookie_config_section(main_frame)
         self._create_log_config_section(main_frame)
+        self._create_notion_config_section(main_frame)
         self._create_bottom_buttons(main_frame)
 
         self._update_log_controls()
         self._update_volume_controls()
+        self._update_notion_controls()
+        self._update_cookie_controls()
 
     def _create_directory_section(self, parent):
         dir_section = ttk.LabelFrame(parent, text='ダウンロード先ディレクトリ', padding=5)
@@ -180,6 +189,22 @@ class ConfigGUI(tk.Tk):
         self.volume_label = ttk.Label(self.volume_frame, textvariable=self.volume_label_var, width=5)
         self.volume_label.pack(side='right')
 
+    def _create_cookie_config_section(self, parent):
+        cookie_config_frame = ttk.LabelFrame(parent, text="Cookie設定", padding=5)
+        cookie_config_frame.pack(fill='x', pady=(0, 10))
+        
+        ttk.Checkbutton(cookie_config_frame, text='ブラウザのCookieを使用して認証する', variable=self.use_cookies_var, command=self._update_cookie_controls).pack(anchor='w')
+        
+        self.cookie_widgets_frame = ttk.Frame(cookie_config_frame)
+        self.cookie_widgets_frame.pack(fill='x', padx=20, pady=5)
+
+        self.cookie_browser_label = ttk.Label(self.cookie_widgets_frame, text='使用するブラウザ:')
+        self.cookie_browser_label.pack(side='left', anchor='w')
+        
+        browser_options = ['chrome', 'firefox', 'brave', 'edge', 'opera', 'safari', 'vivaldi']
+        self.cookie_browser_combo = ttk.Combobox(self.cookie_widgets_frame, textvariable=self.cookie_browser_var, values=browser_options, state='readonly')
+        self.cookie_browser_combo.pack(side='left', padx=5)
+
     def _create_log_config_section(self, parent):
         log_config_frame = ttk.LabelFrame(parent, text="ログ設定", padding=5)
         log_config_frame.pack(fill='x', pady=(0, 10))
@@ -194,6 +219,24 @@ class ConfigGUI(tk.Tk):
         self.log_path_entry.pack(side='left', fill='x', expand=True)
         self.log_path_btn = ttk.Button(log_entry_frame, text='選択', command=self.choose_log_file)
         self.log_path_btn.pack(side='right', padx=(5, 0))
+
+    def _create_notion_config_section(self, parent):
+        notion_config_frame = ttk.LabelFrame(parent, text="Notion連携設定", padding=5)
+        notion_config_frame.pack(fill='x', pady=(0, 10))
+        ttk.Checkbutton(notion_config_frame, text='Notionへのアップロードを有効にする', variable=self.enable_notion_var, command=self._update_notion_controls).pack(anchor='w')
+        
+        self.notion_widgets_frame = ttk.Frame(notion_config_frame)
+        self.notion_widgets_frame.pack(fill='x', padx=20, pady=5)
+
+        self.notion_api_key_label = ttk.Label(self.notion_widgets_frame, text='Notion APIキー:')
+        self.notion_api_key_label.pack(anchor='w')
+        self.notion_api_key_entry = ttk.Entry(self.notion_widgets_frame, textvariable=self.notion_api_key_var, show='*')
+        self.notion_api_key_entry.pack(fill='x', pady=(0, 5))
+
+        self.notion_db_id_label = ttk.Label(self.notion_widgets_frame, text='NotionデータベースID:')
+        self.notion_db_id_label.pack(anchor='w')
+        self.notion_db_id_entry = ttk.Entry(self.notion_widgets_frame, textvariable=self.notion_db_id_var)
+        self.notion_db_id_entry.pack(fill='x')
 
     def _create_bottom_buttons(self, parent):
         bottom_btn_frame = ttk.Frame(parent)
@@ -210,6 +253,16 @@ class ConfigGUI(tk.Tk):
         state = 'normal' if self.enable_logging_var.get() else 'disabled'
         for widget in [self.log_path_entry, self.log_path_btn, self.log_path_label]:
             widget.config(state=state) if not isinstance(widget, ttk.Label) else widget.config(foreground='black' if state == 'normal' else 'gray')
+
+    def _update_notion_controls(self):
+        state = 'normal' if self.enable_notion_var.get() else 'disabled'
+        for widget in [self.notion_api_key_label, self.notion_api_key_entry, self.notion_db_id_label, self.notion_db_id_entry]:
+            widget.config(state=state) if not isinstance(widget, ttk.Label) else widget.config(foreground='black' if state == 'normal' else 'gray')
+
+    def _update_cookie_controls(self):
+        state = 'normal' if self.use_cookies_var.get() else 'disabled'
+        self.cookie_browser_combo.config(state='readonly' if state == 'normal' else 'disabled')
+        self.cookie_browser_label.config(foreground='black' if state == 'normal' else 'gray')
 
     def _build_directory_list(self):
         for widgets in self.dir_widgets:

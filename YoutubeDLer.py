@@ -1,6 +1,8 @@
 import os
 import json
+import re
 import pyperclip
+import requests # Notion APIのために追加
 from yt_dlp import YoutubeDL
 from datetime import datetime
 
@@ -17,36 +19,33 @@ data = read_json(file_path)
 # セッション情報を保持するグローバル変数
 session_info = {}
 
-def initialize_session(url, output_dir, format_choice):
-    """セッション開始時に情報を初期化"""
+def initialize_session(url, output_dir, format_choice, quality):
+    print("セッション開始時に情報を初期化")
     global session_info
     session_info = {
         "タイムスタンプ": datetime.now().isoformat(),
         "URL": url,
         "出力ディレクトリ": output_dir,
         "形式": format_choice,
-        "ステータス": "success",  # デフォルトは成功、エラーがあれば後で変更
+        "フォーマット": quality, # ステータスを品質情報に置き換え
         "ファイル名": "",
         "成否とエラーメッセージ": ""
     }
 
 def update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages=None, filenames=None):
-    """セッション終了時に結果を更新"""
+    print("セッション終了時に結果を更新")
     global session_info
     
-    # ステータスを決定
-    if failed_downloads > 0:
-        session_info["ステータス"] = "error"
-    else:
-        session_info["ステータス"] = "success"
-    
-    # ファイル名を設定（複数の場合は最初のもの、または代表的なもの）
+    # ファイル名を設定
     if filenames and len(filenames) > 0:
         if len(filenames) == 1:
             session_info["ファイル名"] = filenames[0]
         else:
             session_info["ファイル名"] = f"{filenames[0]} 他{len(filenames)-1}件"
-    
+    elif failed_downloads > 0:
+        # 失敗時にファイル名が取得できなかった場合、URLをファイル名として使用
+        session_info["ファイル名"] = session_info.get("URL", "タイトル取得失敗")
+
     # 成否とエラーメッセージを設定
     summary = f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
     if failed_downloads > 0 and error_messages:
@@ -55,37 +54,83 @@ def update_session_result(total_downloads, successful_downloads, failed_download
     else:
         session_info["成否とエラーメッセージ"] = summary
 
-def write_session_log():
-    """セッション終了時に1つのログエントリを書き込み"""
-    if not data.get('enable_logging', True) or not session_info:
+def upload_to_notion(log_entry):
+    print("ログエントリをNotionデータベースにアップロード...")
+
+    if not data.get('enable_notion_upload', False):
         return
-    
-    log_file_path = data.get('log_file_path', file_path)
-    
-    # 既存のログを読み込み
-    existing_logs = []
-    if os.path.exists(log_file_path):
-        try:
-            with open(log_file_path, 'r', encoding='utf-8') as f:
-                existing_logs = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            existing_logs = []
-    
-    # 新しいセッションログを既存ログに追加
-    existing_logs.append(session_info)
-    
-    # ログファイルのディレクトリが存在しない場合は作成
-    log_dir = os.path.dirname(os.path.abspath(log_file_path))
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir, exist_ok=True)
-    
-    # ログファイルに書き込み
+
+    api_key = data.get('notion_api_key')
+    database_id = data.get('notion_database_id')
+
+    if not api_key or not database_id:
+        print("NotionのAPIキーまたはデータベースIDがconfig.jsonに設定されていません。")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+
+    # Notionのプロパティ名とログのキーをマッピング
+    properties = {
+        "ファイル名": {"title": [{"text": {"content": log_entry.get("ファイル名", "N/A")}}]},
+        "URL": {"url": log_entry.get("URL")},
+        "出力ディレクトリ": {"rich_text": [{"text": {"content": log_entry.get("出力ディレクトリ", "")}}]},
+        "形式": {"rich_text": [{"text": {"content": log_entry.get("形式", "")}}]},
+        "フォーマット": {"rich_text": [{"text": {"content": str(log_entry.get("フォーマット", ""))}}]},
+        "成否とエラーメッセージ": {"rich_text": [{"text": {"content": log_entry.get("成否とエラーメッセージ", "")}}]},
+        "タイムスタンプ": {"date": {"start": log_entry.get("タイムスタンプ")}} 
+    }
+
+    payload = {
+        "parent": {"database_id": database_id},
+        "properties": properties
+    }
+
     try:
-        with open(log_file_path, 'w', encoding='utf-8') as f:
-            json.dump(existing_logs, f, indent=2, ensure_ascii=False)
-        print(f"ログを書き込みました: 1件のエントリ")
-    except Exception as e:
-        print(f"ログの書き込みに失敗しました: {e}")
+        response = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
+        response.raise_for_status()
+        print("ログをNotionにアップロードしました。")
+    except requests.exceptions.RequestException as e:
+        print(f"Notionへのアップロードに失敗しました: {e}")
+        if e.response:
+            print(f"Response: {e.response.text}")
+
+def write_session_log():
+    print("セッション終了時に1つのログエントリを書き込み、Notionにアップロード")
+    if not session_info:
+        return
+
+    # ローカルファイルへのログ書き込み
+    if data.get('enable_logging', True):
+        log_file_path = data.get('log_file_path', file_path)
+        
+        existing_logs = []
+        if os.path.exists(log_file_path):
+            try:
+                with open(log_file_path, 'r', encoding='utf-8') as f:
+                    existing_logs = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                existing_logs = []
+        
+        existing_logs.append(session_info)
+        
+        log_dir = os.path.dirname(os.path.abspath(log_file_path))
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        
+        try:
+            with open(log_file_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_logs, f, indent=2, ensure_ascii=False)
+            print(f"ログを書き込みました: 1件のエントリ")
+        except Exception as e:
+            print(f"ログの書き込みに失敗しました: {e}")
+
+    # Notionへのアップロード
+    upload_to_notion(session_info)
+
 
 # デフォルトディレクトリとフォーマットを取得する関数
 def get_default_settings():
@@ -136,118 +181,94 @@ def select_directory_interactive():
 
 # ダウンロードオプションを取得する関数
 def get_download_options(dl_dir, format_choice):
-    download_subtitles = data.get('download_subtitles', False)  # 字幕ダウンロード設定を取得
-    embed_subtitles = data.get('embed_subtitles', False)  # 字幕埋め込み設定を取得
-    
-    # 画質設定を取得 (デフォルトは 'best')
+    print("ダウンロードオプションを取得しています...")
+    download_subtitles = data.get('download_subtitles', False)
+    embed_subtitles = data.get('embed_subtitles', False)
     video_quality = data.get('video_quality', 'best')
-
-    # 音量調整の設定を取得
     enable_volume_adjustment = data.get('enable_volume_adjustment', False)
-    volume_level = data.get('volume_level', 1.0)  # デフォルト値：1.0（変更なし）
+    volume_level = data.get('volume_level', 1.0)
+    use_cookies = data.get('use_cookies', False)
+    cookie_browser = data.get('cookie_browser', 'chrome')
     
     options = {
         'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'),
     }
 
-    # 画質設定の情報を表示
-    print(f"画質: {video_quality}")
+    if use_cookies:
+        options['cookies-from-browser'] = cookie_browser
+        print(f"Cookieを使用します (ブラウザ: {cookie_browser})")
 
-    # 音量調整の情報を表示
+    print(f"画質: {video_quality}")
     if enable_volume_adjustment:
         print(f"音量調整: 有効 (レベル: {volume_level})")
     else:
         print("音量調整: 無効")
 
-    # 'best' 以外の画質指定があるか
     quality_selector = ""
-    # isdigit()で数字かどうかをチェックし、'best'でないことを確認
     if video_quality != 'best' and str(video_quality).isdigit():
         quality_selector = f"[height<=?{video_quality}]"
 
-    if format_choice == "mp4":  # mp4
+    if format_choice == "mp4":
         options['format'] = f'bestvideo{quality_selector}[ext=mp4]+bestaudio[ext=m4a]/best{quality_selector}[ext=mp4]/best'
-        
-        # 音量調整が有効な場合
         if enable_volume_adjustment:
             options['postprocessors'] = [{
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'mp4',
                 'params': ['-af', f'volume={volume_level}']
             }]
-            
-    elif format_choice == "mp3":  # mp3
+    elif format_choice == "mp3":
         options['format'] = 'bestaudio'
         postprocessors = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }]
-        
-        # 音量調整が有効な場合
         if enable_volume_adjustment:
             postprocessors[0]['params'] = ['-af', f'volume={volume_level}']
-            
         options['postprocessors'] = postprocessors
-        
-    elif format_choice == "webm":  # webm
+    elif format_choice == "webm":
         options['format'] = f'bestvideo{quality_selector}[ext=webm]+bestaudio[ext=webm]/best{quality_selector}[ext=webm]/best'
-        
-        # 音量調整が有効な場合
         if enable_volume_adjustment:
             options['postprocessors'] = [{
                 'key': 'FFmpegVideoConvertor',
                 'preferedformat': 'webm',
                 'params': ['-af', f'volume={volume_level}']
             }]
-            
-    elif format_choice == "wav":  # wav
+    elif format_choice == "wav":
         options['format'] = 'bestaudio'
         postprocessors = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'wav',
         }]
-        
-        # 音量調整が有効な場合
         if enable_volume_adjustment:
             postprocessors[0]['params'] = ['-af', f'volume={volume_level}']
-            
         options['postprocessors'] = postprocessors
-        
-    elif format_choice == "flac":  # flac
+    elif format_choice == "flac":
         options['format'] = 'bestaudio'
         postprocessors = [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'flac',
         }]
-        
-        # 音量調整が有効な場合
         if enable_volume_adjustment:
             postprocessors[0]['params'] = ['-af', f'volume={volume_level}']
-            
         options['postprocessors'] = postprocessors
-        
     else:
         options['format'] = 'best'
-        
-        # 音量調整が有効な場合
         if enable_volume_adjustment:
             options['postprocessors'] = [{
                 'key': 'FFmpegVideoConvertor',
                 'params': ['-af', f'volume={volume_level}']
             }]
 
-    # 字幕ダウンロードの設定を追加
     if download_subtitles:
-        options['subtitleslangs'] = ['all']  # すべての言語の字幕をダウンロード
-        options['writesubtitles'] = True    # 字幕ファイルをダウンロード
+        options['subtitleslangs'] = ['all']
+        options['writesubtitles'] = True
         print("字幕をダウンロードします。")
 
-    # 字幕埋め込みの設定を追加
     if embed_subtitles:
         options['postprocessors'] = options.get('postprocessors', [])
         options['postprocessors'].append({
-            'key': 'FFmpegEmbedSubtitle',  # 字幕を埋め込む
+            'key': 'FFmpegEmbedSubtitle',
         })
         print("字幕を埋め込みます。")
 
@@ -255,12 +276,15 @@ def get_download_options(dl_dir, format_choice):
 
 # 再生リストのURLから個別の動画URLを取得する関数
 def get_video_urls(playlist_url):
+    print("再生リストの動画URLを取得しています...")
     ydl_opts = {
         'quiet': True,
-        'extract_flat': True,  # 動画情報のみ取得
+        'extract_flat': True,
         'skip_download': True
     }
-    
+    if data.get('use_cookies', False):
+        ydl_opts['cookies-from-browser'] = data.get('cookie_browser', 'chrome')
+
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(playlist_url, download=False)
     
@@ -279,20 +303,22 @@ def download_video(url, output_dir, format_choice):
 
     with YoutubeDL(ydl_opts) as ydl:
         try:
-            # ダウンロード前に動画情報を取得してタイトルを取得
             info = ydl.extract_info(url, download=False)
             title = info.get('title', 'Unknown Title')
-            
-            # ダウンロード実行
             ydl.download([url])
-            
             print(f"✓ ダウンロード成功: {title}")
             return True, None, title
-            
         except Exception as e:
             error_msg = str(e)
-            print(f"✗ エラーが発生しました: {error_msg}")
-            return False, error_msg, None
+            clean_error_msg = re.sub(r'\x1b\[[0-9;]*m', '', error_msg)
+            print(f"✗ エラーが発生しました: {clean_error_msg}")
+            # タイトル取得を試みる
+            try:
+                info = ydl.extract_info(url, download=False) # download=Falseで再試行
+                title = info.get('title', 'Unknown Title')
+            except:
+                title = None
+            return False, clean_error_msg, title
 
 # メイン処理
 def main():
@@ -303,14 +329,11 @@ def main():
 
     print(f"処理対象URL: {video_url}")
     
-    # 対話的選択の設定を確認
     interactive_selection = data.get('interactive_selection', False)
     
     if interactive_selection:
-        # 対話的にディレクトリを選択
         output_dir, format_choice = select_directory_interactive()
     else:
-        # デフォルト設定を使用
         output_dir, format_choice = get_default_settings()
     
     if not output_dir or not format_choice:
@@ -324,17 +347,22 @@ def main():
     print(f"保存先: {output_dir}")
     print(f"形式: {format_choice}")
 
-    # ログ機能の状態を表示
     if data.get('enable_logging', True):
         log_file = data.get('log_file_path', 'python/youtube-downloarder/download_log.json')
         print(f"ログ機能: 有効 ({log_file})")
     else:
         print("ログ機能: 無効")
 
-    # セッション情報を初期化
-    initialize_session(video_url, output_dir, format_choice)
+    quality = 'best'
+    if format_choice in ["mp4", "webm"]:
+        quality = data.get('video_quality', 'best')
+    elif format_choice == "mp3":
+        quality = '192kbps'
+    elif format_choice in ["wav", "flac"]:
+        quality = 'lossless'
 
-    # 統計用変数
+    initialize_session(video_url, output_dir, format_choice, quality)
+
     total_downloads = 0
     successful_downloads = 0
     failed_downloads = 0
@@ -342,7 +370,6 @@ def main():
     filenames = []
 
     try:
-        # 再生リストの場合、個別の動画URLを取得
         is_playlist = "playlist" in video_url
         if is_playlist:
             video_urls, playlist_title = get_video_urls(video_url)
@@ -352,16 +379,13 @@ def main():
                 failed_downloads = 1
                 total_downloads = 1
             else:
-                # makedirectorの設定を確認してディレクトリ作成を決定
                 makedirector = data.get('makedirector', True)
                 if makedirector:
-                    # 再生リスト用のディレクトリを作成
                     playlist_dir = os.path.join(output_dir, playlist_title)
                     os.makedirs(playlist_dir, exist_ok=True)
                     final_output_dir = playlist_dir
                     print(f"再生リスト用ディレクトリを作成: {playlist_dir}")
                 else:
-                    # 直接指定されたディレクトリに保存
                     final_output_dir = output_dir
                     print("再生リストの動画を直接指定ディレクトリに保存します。")
 
@@ -379,8 +403,9 @@ def main():
                         failed_downloads += 1
                         if error_msg:
                             error_messages.append(error_msg)
+                        if filename: # エラーでもタイトルが取れた場合
+                            filenames.append(filename)
         else:
-            # 個別の動画URLの場合
             print("個別動画をダウンロードしています...")
             total_downloads = 1
             success, error_msg, filename = download_video(video_url, output_dir, format_choice)
@@ -392,22 +417,19 @@ def main():
                 failed_downloads = 1
                 if error_msg:
                     error_messages.append(error_msg)
+                if filename:
+                    filenames.append(filename)
 
     except Exception as e:
-        # 予期しないエラーの場合
         print(f"予期しないエラーが発生しました: {e}")
         error_messages.append(f"予期しないエラー: {str(e)}")
         failed_downloads = total_downloads if total_downloads > 0 else 1
         total_downloads = total_downloads if total_downloads > 0 else 1
 
     finally:
-        # セッション結果を更新
         update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages, filenames)
-        
-        # ログを書き込み
         write_session_log()
 
-        # 結果サマリーを表示
         print(f"\n{'='*50}")
         print("ダウンロード完了！")
         print(f"総数: {total_downloads}, 成功: {successful_downloads}, 失敗: {failed_downloads}")
@@ -420,7 +442,6 @@ def main():
             print("✓ すべてのダウンロードが完了しました。")
         print(f"{'='*50}")
 
-# ffmpegのパスを設定
 ffmpeg_path = data.get('ffmpeg_path', r'C:\ProgramData\chocolatey\bin\ffmpeg.exe')
 if ffmpeg_path and os.path.exists(ffmpeg_path):
     ffmpeg_dir = os.path.dirname(ffmpeg_path)
