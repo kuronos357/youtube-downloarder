@@ -4,7 +4,7 @@ import re
 import pyperclip
 import requests # Notion APIのために追加
 from yt_dlp import YoutubeDL
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 file_path = "/home/kuronos357/programming/Project/youtube-downloarder/設定・履歴/config.json"  # 設定ファイルのパス
 
@@ -20,14 +20,16 @@ data = read_json(file_path)
 session_info = {}
 
 def initialize_session(url, output_dir, format_choice, quality):
-    print("セッション開始時に情報を初期化")
+    """セッション開始時に情報を初期化"""
     global session_info
+    # JST (UTC+9) のタイムゾーンを定義
+    jst = timezone(timedelta(hours=9), 'JST')
     session_info = {
-        "タイムスタンプ": datetime.now().isoformat(),
+        "タイムスタンプ": datetime.now(jst).isoformat(),
         "URL": url,
         "出力ディレクトリ": output_dir,
         "形式": format_choice,
-        "フォーマット": quality, # ステータスを品質情報に置き換え
+        "フォーマット": quality,
         "ファイル名": "",
         "成否とエラーメッセージ": ""
     }
