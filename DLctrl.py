@@ -70,7 +70,7 @@ class ConfigGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x1300') # Adjusted height for new sections
+        self.geometry('1000x800') # Adjusted for tabbed interface
         self.resizable(True, True)
         self.config_data = load_config()
         self.dir_widgets = []
@@ -117,12 +117,27 @@ class ConfigGUI(tk.Tk):
         main_frame = ttk.Frame(self, padding=10)
         main_frame.pack(fill='both', expand=True)
 
-        self._create_directory_section(main_frame)
-        self._create_mode_section(main_frame)
-        self._create_other_settings_section(main_frame)
-        self._create_cookie_config_section(main_frame)
-        self._create_log_config_section(main_frame)
-        self._create_notion_config_section(main_frame)
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill='both', expand=True, pady=(0, 10))
+
+        # Tab 1: General
+        general_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(general_tab, text='一般設定')
+        self._create_directory_section(general_tab)
+        self._create_mode_section(general_tab)
+
+        # Tab 2: Download
+        download_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(download_tab, text='ダウンロード設定')
+        self._create_other_settings_section(download_tab)
+
+        # Tab 3: Advanced
+        advanced_tab = ttk.Frame(notebook, padding=10)
+        notebook.add(advanced_tab, text='連携・その他')
+        self._create_cookie_config_section(advanced_tab)
+        self._create_log_config_section(advanced_tab)
+        self._create_notion_config_section(advanced_tab)
+
         self._create_bottom_buttons(main_frame)
 
         self._update_log_controls()
@@ -139,8 +154,10 @@ class ConfigGUI(tk.Tk):
         ttk.Button(btn_frame, text='ディレクトリを追加', command=self.add_directory).pack(side='left')
         ttk.Label(btn_frame, text='※ディレクトリを追加後、パスを設定してください').pack(side='left', padx=(10, 0))
 
-        canvas = tk.Canvas(dir_section, height=200)
-        scrollbar = ttk.Scrollbar(dir_section, orient="vertical", command=canvas.yview)
+        canvas_frame = ttk.Frame(dir_section)
+        canvas_frame.pack(fill='both', expand=True)
+        canvas = tk.Canvas(canvas_frame)
+        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
         self.scrollable_frame = ttk.Frame(canvas)
 
         self.scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
