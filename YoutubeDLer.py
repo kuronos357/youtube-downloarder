@@ -150,42 +150,9 @@ def get_default_settings():
     default_dir_info = directories[default_index]
     return default_dir_info['path'], default_dir_info['format']
 
-# 対話的にディレクトリを選択する関数
-def select_directory_interactive():
-    directories = data.get('directories', [])
-    if not directories:
-        print("ディレクトリが設定されていません。")
-        return None, None
-    
-    if len(directories) == 1:
-        # ディレクトリが1つしかない場合はそれを使用
-        return directories[0]['path'], directories[0]['format']
-    
-    print("\n利用可能なディレクトリ:")
-    for i, dir_info in enumerate(directories):
-        print(f"{i + 1}. {dir_info['path']} (形式: {dir_info['format']})")
-    
-    while True:
-        try:
-            choice = input(f"\nディレクトリを選択してください (1-{len(directories)}): ").strip()
-            if not choice:
-                # 空入力の場合はデフォルトを使用
-                return get_default_settings()
-            
-            index = int(choice) - 1
-            if 0 <= index < len(directories):
-                selected = directories[index]
-                return selected['path'], selected['format']
-            else:
-                print(f"1から{len(directories)}の間で選択してください。")
-        except ValueError:
-            print("数字を入力してください。")
-
 # ダウンロードオプションを取得する関数
 def get_download_options(dl_dir, format_choice):
     print("ダウンロードオプションを取得しています...")
-    download_subtitles = data.get('download_subtitles', False)
-    embed_subtitles = data.get('embed_subtitles', False)
     video_quality = data.get('video_quality', 'best')
     enable_volume_adjustment = data.get('enable_volume_adjustment', False)
     volume_level = data.get('volume_level', 1.0)
@@ -262,18 +229,6 @@ def get_download_options(dl_dir, format_choice):
                 'params': ['-af', f'volume={volume_level}']
             }]
 
-    if download_subtitles:
-        options['subtitleslangs'] = ['all']
-        options['writesubtitles'] = True
-        print("字幕をダウンロードします。")
-
-    if embed_subtitles:
-        options['postprocessors'] = options.get('postprocessors', [])
-        options['postprocessors'].append({
-            'key': 'FFmpegEmbedSubtitle',
-        })
-        print("字幕を埋め込みます。")
-
     return options
 
 # 再生リストのURLから個別の動画URLを取得する関数
@@ -331,12 +286,7 @@ def main():
 
     print(f"処理対象URL: {video_url}")
     
-    interactive_selection = data.get('interactive_selection', False)
-    
-    if interactive_selection:
-        output_dir, format_choice = select_directory_interactive()
-    else:
-        output_dir, format_choice = get_default_settings()
+    output_dir, format_choice = get_default_settings()
     
     if not output_dir or not format_choice:
         print("設定が不正です。")

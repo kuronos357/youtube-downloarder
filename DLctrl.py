@@ -1,5 +1,3 @@
-
-
 import json
 import os
 import sys
@@ -15,12 +13,9 @@ def get_default_config():
     log_file_path = str(Path(__file__).parent / '設定・履歴/log.json')
     
     base_config = {
-        "download_subtitles": False,
-        "embed_subtitles": False,
         "video_quality": "best",
         "mkdir_list": True,
         "makedirector": True,
-        "interactive_selection": False,
         "enable_logging": True,
         "log_file_path": log_file_path,
         "enable_volume_adjustment": False,
@@ -59,6 +54,10 @@ def load_config():
     for key, value in default_conf.items():
         config.setdefault(key, value)
     
+    # Clean up old keys
+    for key in ["interactive_selection", "download_subtitles", "embed_subtitles"]:
+        config.pop(key, None)
+
     return config
 
 def save_config(config):
@@ -79,10 +78,7 @@ class ConfigGUI(tk.Tk):
 
     def _create_vars(self):
         self.dir_var = tk.IntVar(value=self.config_data.get('default_directory_index'))
-        self.interactive_var = tk.BooleanVar(value=self.config_data.get('interactive_selection'))
         self.ffmpeg_var = tk.StringVar(value=self.config_data.get('ffmpeg_path'))
-        self.sub_dl_var = tk.BooleanVar(value=self.config_data.get('download_subtitles'))
-        self.sub_embed_var = tk.BooleanVar(value=self.config_data.get('embed_subtitles'))
         self.video_quality_var = tk.StringVar(value=self.config_data.get('video_quality', 'best'))
         self.makedir_var = tk.BooleanVar(value=self.config_data.get('makedirector'))
         self.enable_logging_var = tk.BooleanVar(value=self.config_data.get('enable_logging'))
@@ -96,10 +92,7 @@ class ConfigGUI(tk.Tk):
         self.cookie_browser_var = tk.StringVar(value=self.config_data.get('cookie_browser'))
 
         self.settings_map = {
-            'interactive_selection': self.interactive_var,
             'ffmpeg_path': self.ffmpeg_var,
-            'download_subtitles': self.sub_dl_var,
-            'embed_subtitles': self.sub_embed_var,
             'video_quality': self.video_quality_var,
             'makedirector': self.makedir_var,
             'enable_logging': self.enable_logging_var,
@@ -124,7 +117,6 @@ class ConfigGUI(tk.Tk):
         general_tab = ttk.Frame(notebook, padding=10)
         notebook.add(general_tab, text='一般設定')
         self._create_directory_section(general_tab)
-        self._create_mode_section(general_tab)
 
         # Tab 2: Download
         download_tab = ttk.Frame(notebook, padding=10)
@@ -168,12 +160,6 @@ class ConfigGUI(tk.Tk):
         scrollbar.pack(side="right", fill="y")
         self._build_directory_list()
 
-    def _create_mode_section(self, parent):
-        mode_frame = ttk.LabelFrame(parent, text="ディレクトリ選択モード", padding=5)
-        mode_frame.pack(fill='x', pady=(0, 10))
-        ttk.Radiobutton(mode_frame, text="json準拠の設定", variable=self.interactive_var, value=False).pack(anchor='w')
-        ttk.Radiobutton(mode_frame, text="実行時に対話的選択", variable=self.interactive_var, value=True).pack(anchor='w')
-
     def _create_other_settings_section(self, parent):
         other_frame = ttk.LabelFrame(parent, text="その他の設定", padding=5)
         other_frame.pack(fill='x', pady=(0, 10))
@@ -193,8 +179,7 @@ class ConfigGUI(tk.Tk):
         ttk.Combobox(quality_frame, textvariable=self.video_quality_var, values=quality_options).pack(side='left', padx=5)
         ttk.Label(quality_frame, text='("best", "1080"など。指定解像度以下の最大画質)').pack(side='left', anchor='w')
 
-        for text, var in [('字幕をダウンロード', self.sub_dl_var), ('字幕を埋め込み', self.sub_embed_var), ('プレイリストの場合のディレクトリ作成する', self.makedir_var)]:
-            ttk.Checkbutton(other_frame, text=text, variable=var).pack(anchor='w', pady=2)
+        ttk.Checkbutton(other_frame, text='プレイリストの場合のディレクトリ作成する', variable=self.makedir_var).pack(anchor='w', pady=2)
 
         self.volume_check = ttk.Checkbutton(other_frame, text='音量を調整する', variable=self.enable_volume_var, command=self._update_volume_controls)
         self.volume_check.pack(anchor='w', pady=(10, 2))
