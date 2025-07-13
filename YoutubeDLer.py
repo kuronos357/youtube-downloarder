@@ -5,8 +5,9 @@ import pyperclip
 import requests # Notion APIのために追加
 from yt_dlp import YoutubeDL
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
-file_path = "/home/kuronos357/programming/Project/youtube-downloarder/設定・履歴/config.json"  # 設定ファイルのパス
+file_path = Path(__file__).parent / '設定・履歴/config.json' # 設定ファイルのパス
 
 # jsonファイルを読み込む関数
 def read_json(file_path):
@@ -80,7 +81,7 @@ def upload_to_notion(log_entry):
         "ファイル名": {"title": [{"text": {"content": log_entry.get("ファイル名", "N/A")}}]},
         "URL": {"url": log_entry.get("URL")},
         "出力ディレクトリ": {"rich_text": [{"text": {"content": log_entry.get("出力ディレクトリ", "")}}]},
-        "形式": {"rich_text": [{"text": {"content": log_entry.get("形式", "")}}]},
+        "形式": {"select": {"name": log_entry.get("形式", "")}},
         "フォーマット": {"rich_text": [{"text": {"content": str(log_entry.get("フォーマット", ""))}}]},
         "成否とエラーメッセージ": {"rich_text": [{"text": {"content": log_entry.get("成否とエラーメッセージ", "")}}]},
         "タイムスタンプ": {"date": {"start": log_entry.get("タイムスタンプ")}} 
@@ -253,6 +254,7 @@ def get_video_urls(playlist_url):
 
 # ダウンロード処理を行う関数
 def download_video(url, output_dir, format_choice):
+    print("ダウンロード開始")
     ydl_opts = get_download_options(output_dir, format_choice)
     if not ydl_opts:
         print("無効なフォーマットが選択されています。")
@@ -262,6 +264,18 @@ def download_video(url, output_dir, format_choice):
         try:
             info = ydl.extract_info(url, download=False)
             title = info.get('title', 'Unknown Title')
+
+            # Check if file already exists
+            temp_filepath = ydl.prepare_filename(info)
+            base_filename = os.path.splitext(os.path.basename(temp_filepath))[0]
+            
+            final_filename = f"{base_filename}.{format_choice}"
+            final_filepath = os.path.join(output_dir, final_filename)
+
+            if os.path.exists(final_filepath):
+                print(f"ファイルが既に存在するため、ダウンロードを中止します: {final_filepath}")
+                return False, f"ファイルが既に存在: {final_filename}", title
+
             ydl.download([url])
             print(f"✓ ダウンロード成功: {title}")
             return True, None, title
@@ -300,7 +314,7 @@ def main():
     print(f"形式: {format_choice}")
 
     if data.get('enable_logging', True):
-        log_file = data.get('log_file_path', 'python/youtube-downloarder/download_log.json')
+        log_file = data.get('log_file_path', Path(__file__).parent / '設定・履歴/log.json')
         print(f"ログ機能: 有効 ({log_file})")
     else:
         print("ログ機能: 無効")
@@ -388,8 +402,6 @@ def main():
         
         if failed_downloads > 0:
             print(f"⚠️ {failed_downloads}件のダウンロードに失敗しました。")
-            if data.get('enable_logging', True):
-                print("詳細はログファイルを確認してください。")
         else:
             print("✓ すべてのダウンロードが完了しました。")
         print(f"{'='*50}")
