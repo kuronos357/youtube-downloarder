@@ -2,12 +2,12 @@ import os
 import json
 import re
 import pyperclip
-import requests # Notion APIのために追加
+import requests
 from yt_dlp import YoutubeDL
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-file_path = Path(__file__).parent / '設定・履歴/config.json' # 設定ファイルのパス
+file_path = Path(__file__).parent / '設定・履歴/config.json'  # 設定ファイルのパス
 
 # jsonファイルを読み込む関数
 def read_json(file_path):
@@ -57,18 +57,19 @@ def update_session_result(total_downloads, successful_downloads, failed_download
     else:
         session_info["成否とエラーメッセージ"] = summary
 
-def upload_to_notion(log_entry):
-    print("ログエントリをNotionデータベースにアップロード...")
+def upload_to_notion(log_entry, parent_page_id=None):
+    """Notionにログエントリをアップロードし、作成されたページのIDを返す"""
+    print(f"ログエントリをNotionデータベースにアップロード... ファイル名: {log_entry.get('ファイル名', 'N/A')}")
 
     if not data.get('enable_notion_upload', False):
-        return
+        return None
 
     api_key = data.get('notion_api_key')
     database_id = data.get('notion_database_id')
 
     if not api_key or not database_id:
         print("NotionのAPIキーまたはデータベースIDがconfig.jsonに設定されていません。")
-        return
+        return None
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -76,16 +77,19 @@ def upload_to_notion(log_entry):
         "Notion-Version": "2022-06-28",
     }
 
-    # Notionのプロパティ名とログのキーをマッピング
     properties = {
         "ファイル名": {"title": [{"text": {"content": log_entry.get("ファイル名", "N/A")}}]},
         "URL": {"url": log_entry.get("URL")},
         "出力ディレクトリ": {"rich_text": [{"text": {"content": log_entry.get("出力ディレクトリ", "")}}]},
         "形式": {"select": {"name": log_entry.get("形式", "")}},
-        "フォーマット": {"rich_text": [{"text": {"content": str(log_entry.get("フォーマット", ""))}}]},
+        "フォーマット":{"select": {"name" : str(log_entry.get("フォーマット", ""))}},
         "成否とエラーメッセージ": {"rich_text": [{"text": {"content": log_entry.get("成否とエラーメッセージ", "")}}]},
-        "タイムスタンプ": {"date": {"start": log_entry.get("タイムスタンプ")}} 
+        "タイムスタンプ": {"date": {"start": log_entry.get("タイムスタンプ")}}
     }
+
+    # 親アイテムが指定されている場合、リレーションプロパティを追加
+    if parent_page_id:
+        properties["親アイテム"] = {"relation": [{"id": parent_page_id}]}
 
     payload = {
         "parent": {"database_id": database_id},
@@ -95,45 +99,42 @@ def upload_to_notion(log_entry):
     try:
         response = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload)
         response.raise_for_status()
-        print("ログをNotionにアップロードしました。")
+        page_id = response.json().get("id")
+        print(f"ログをNotionにアップロードしました。 Page ID: {page_id}")
+        return page_id
     except requests.exceptions.RequestException as e:
         print(f"Notionへのアップロードに失敗しました: {e}")
         if e.response:
             print(f"Response: {e.response.text}")
+        return None
 
-def write_session_log():
-    print("セッション終了時に1つのログエントリを書き込み、Notionにアップロード")
-    if not session_info:
+def write_log_to_file(log_entry):
+    """単一のログエントリをローカルファイルに書き込む"""
+    if not data.get('enable_logging', True):
         return
 
-    # ローカルファイルへのログ書き込み
-    if data.get('enable_logging', True):
-        log_file_path = data.get('log_file_path', file_path)
-        
-        existing_logs = []
-        if os.path.exists(log_file_path):
-            try:
-                with open(log_file_path, 'r', encoding='utf-8') as f:
-                    existing_logs = json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                existing_logs = []
-        
-        existing_logs.append(session_info)
-        
-        log_dir = os.path.dirname(os.path.abspath(log_file_path))
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        
+    log_file_path = data.get('log_file_path', file_path)
+    
+    existing_logs = []
+    if os.path.exists(log_file_path):
         try:
-            with open(log_file_path, 'w', encoding='utf-8') as f:
-                json.dump(existing_logs, f, indent=2, ensure_ascii=False)
-            print(f"ログを書き込みました: 1件のエントリ")
-        except Exception as e:
-            print(f"ログの書き込みに失敗しました: {e}")
-
-    # Notionへのアップロード
-    upload_to_notion(session_info)
-
+            with open(log_file_path, 'r', encoding='utf-8') as f:
+                existing_logs = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            existing_logs = []
+    
+    existing_logs.append(log_entry)
+    
+    log_dir = os.path.dirname(os.path.abspath(log_file_path))
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir, exist_ok=True)
+    
+    try:
+        with open(log_file_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_logs, f, indent=2, ensure_ascii=False)
+        print(f"ログを書き込みました: {log_entry.get('ファイル名')}")
+    except Exception as e:
+        print(f"ログの書き込みに失敗しました: {e}")
 
 # デフォルトディレクトリとフォーマットを取得する関数
 def get_default_settings():
@@ -327,7 +328,8 @@ def main():
     elif format_choice in ["wav", "flac"]:
         quality = 'lossless'
 
-    initialize_session(video_url, output_dir, format_choice, quality)
+    # JST timezone
+    jst = timezone(timedelta(hours=9), 'JST')
 
     total_downloads = 0
     successful_downloads = 0
@@ -347,7 +349,8 @@ def main():
             else:
                 makedirector = data.get('makedirector', True)
                 if makedirector:
-                    playlist_dir = os.path.join(output_dir, playlist_title)
+                    safe_playlist_title = re.sub(r'[\\/*?:"<>|]', "_", playlist_title)
+                    playlist_dir = os.path.join(output_dir, safe_playlist_title)
                     os.makedirs(playlist_dir, exist_ok=True)
                     final_output_dir = playlist_dir
                     print(f"再生リスト用ディレクトリを作成: {playlist_dir}")
@@ -358,9 +361,22 @@ def main():
                 total_downloads = len(video_urls)
                 print(f"再生リスト内の動画数: {total_downloads}")
                 
+                video_logs = []
                 for i, url in enumerate(video_urls, 1):
                     print(f"\nダウンロード中 ({i}/{total_downloads}): ")
                     success, error_msg, filename = download_video(url, final_output_dir, format_choice)
+                    
+                    video_log = {
+                        "タイムスタンプ": datetime.now(jst).isoformat(),
+                        "URL": url,
+                        "出力ディレクトリ": final_output_dir,
+                        "形式": format_choice,
+                        "フォーマット": quality,
+                        "ファイル名": filename or "タイトル取得失敗",
+                        "成否とエラーメッセージ": "Success" if success else error_msg
+                    }
+                    video_logs.append(video_log)
+
                     if success:
                         successful_downloads += 1
                         if filename:
@@ -369,9 +385,47 @@ def main():
                         failed_downloads += 1
                         if error_msg:
                             error_messages.append(error_msg)
-                        if filename: # エラーでもタイトルが取れた場合
+                        if filename:
                             filenames.append(filename)
-        else:
+                
+                # Create playlist summary log
+                playlist_log = {
+                    "タイムスタンプ": datetime.now(jst).isoformat(),
+                    "URL": video_url,
+                    "出力ディレクトリ": final_output_dir,
+                    "形式": format_choice,
+                    "フォーマット": quality,
+                    "ファイル名": f"{playlist_title} ({total_downloads}件)",
+                    "成否とエラーメッセージ": f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
+                }
+                if failed_downloads > 0:
+                    playlist_log["成否とエラーメッセージ"] += f", Errors: {'; '.join(error_messages[:3])}"
+
+                # Write playlist log to local file
+                write_log_to_file(playlist_log)
+
+                # Upload to Notion
+                if data.get('enable_notion_upload', False):
+                    print("\nNotionへのアップロードを開始します...")
+                    parent_page_id = upload_to_notion(playlist_log)
+                    if parent_page_id:
+                        print(f"プレイリストの親ページをNotionに作成しました。ID: {parent_page_id}")
+                        print("各動画のログをサブアイテムとして登録します。")
+                        for v_log in video_logs:
+                            upload_to_notion(v_log, parent_page_id=parent_page_id)
+                            # Also write individual video logs to local file for completeness
+                            write_log_to_file(v_log)
+                    else:
+                        print("親ページの作成に失敗したため、サブアイテムの登録をスキップします。")
+                        # If parent fails, still log children locally
+                        for v_log in video_logs:
+                            write_log_to_file(v_log)
+                else:
+                    # if notion is disabled, still write children logs to file
+                    for v_log in video_logs:
+                        write_log_to_file(v_log)
+
+        else: # single video download
             print("個別動画をダウンロードしています...")
             total_downloads = 1
             success, error_msg, filename = download_video(video_url, output_dir, format_choice)
@@ -386,16 +440,24 @@ def main():
                 if filename:
                     filenames.append(filename)
 
+            # Create and log session info for single video
+            initialize_session(video_url, output_dir, format_choice, quality)
+            update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages, filenames)
+            
+            write_log_to_file(session_info)
+            upload_to_notion(session_info)
+
     except Exception as e:
         print(f"予期しないエラーが発生しました: {e}")
-        error_messages.append(f"予期しないエラー: {str(e)}")
-        failed_downloads = total_downloads if total_downloads > 0 else 1
-        total_downloads = total_downloads if total_downloads > 0 else 1
+        # Log the error
+        error_log = {
+            "タイムスタンプ": datetime.now(jst).isoformat(),
+            "URL": video_url,
+            "成否とエラーメッセージ": f"予期しないエラー: {str(e)}"
+        }
+        write_log_to_file(error_log)
 
     finally:
-        update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages, filenames)
-        write_session_log()
-
         print(f"\n{'='*50}")
         print("ダウンロード完了！")
         print(f"総数: {total_downloads}, 成功: {successful_downloads}, 失敗: {failed_downloads}")
