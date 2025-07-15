@@ -69,7 +69,7 @@ class ConfigGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x800') # Adjusted for tabbed interface
+        self.geometry('1000x800')
         self.resizable(True, True)
         self.config_data = load_config()
         self.dir_widgets = []
@@ -175,7 +175,7 @@ class ConfigGUI(tk.Tk):
         quality_frame = ttk.Frame(other_frame)
         quality_frame.pack(fill='x', pady=(5, 5))
         ttk.Label(quality_frame, text='動画の画質:').pack(side='left', anchor='w')
-        quality_options = ['best', '1080', '720', '480', '360']
+        quality_options = ['best','2160' ,'1440','1080', '720', '480', '360']
         ttk.Combobox(quality_frame, textvariable=self.video_quality_var, values=quality_options).pack(side='left', padx=5)
         ttk.Label(quality_frame, text='("best", "1080"など。指定解像度以下の最大画質)').pack(side='left', anchor='w')
 

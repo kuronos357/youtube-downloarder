@@ -32,7 +32,8 @@ def initialize_session(url, output_dir, format_choice, quality):
         "形式": format_choice,
         "フォーマット": quality,
         "ファイル名": "",
-        "成否とエラーメッセージ": ""
+        "成否": False,
+        "エラーメッセージ": ""
     }
 
 def update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages=None, filenames=None):
@@ -50,12 +51,12 @@ def update_session_result(total_downloads, successful_downloads, failed_download
         session_info["ファイル名"] = session_info.get("URL", "タイトル取得失敗")
 
     # 成否とエラーメッセージを設定
-    summary = f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
-    if failed_downloads > 0 and error_messages:
-        # エラーがある場合はエラーメッセージも含める
-        session_info["成否とエラーメッセージ"] = f"{summary}, Errors: {'; '.join(error_messages[:3])}"  # 最初の3つのエラーのみ
+    is_success = failed_downloads == 0
+    session_info["成否"] = is_success
+    if not is_success and error_messages:
+        session_info["エラーメッセージ"] = '; '.join(error_messages)
     else:
-        session_info["成否とエラーメッセージ"] = summary
+        session_info["エラーメッセージ"] = ""
 
 def upload_to_notion(log_entry, parent_page_id=None):
     """Notionにログエントリをアップロードし、作成されたページのIDを返す"""
@@ -83,8 +84,9 @@ def upload_to_notion(log_entry, parent_page_id=None):
         "出力ディレクトリ": {"rich_text": [{"text": {"content": log_entry.get("出力ディレクトリ", "")}}]},
         "形式": {"select": {"name": log_entry.get("形式", "")}},
         "フォーマット":{"select": {"name" : str(log_entry.get("フォーマット", ""))}},
-        "成否とエラーメッセージ": {"rich_text": [{"text": {"content": log_entry.get("成否とエラーメッセージ", "")}}]},
-        "タイムスタンプ": {"date": {"start": log_entry.get("タイムスタンプ")}}
+        "タイムスタンプ": {"date": {"start": log_entry.get("タイムスタンプ")}},
+        "成否": {"checkbox": log_entry.get("成否", False)},
+        "エラーメッセージ": {"rich_text": [{"text": {"content": log_entry.get("エラーメッセージ", "")}}]}
     }
 
     # 親アイテムが指定されている場合、リレーションプロパティを追加
@@ -366,6 +368,7 @@ def main():
                     print(f"\nダウンロード中 ({i}/{total_downloads}): ")
                     success, error_msg, filename = download_video(url, final_output_dir, format_choice)
                     
+                    is_success = success
                     video_log = {
                         "タイムスタンプ": datetime.now(jst).isoformat(),
                         "URL": url,
@@ -373,7 +376,8 @@ def main():
                         "形式": format_choice,
                         "フォーマット": quality,
                         "ファイル名": filename or "タイトル取得失敗",
-                        "成否とエラーメッセージ": "Success" if success else error_msg
+                        "成否": is_success,
+                        "エラーメッセージ": "" if is_success else error_msg
                     }
                     video_logs.append(video_log)
 
@@ -389,6 +393,7 @@ def main():
                             filenames.append(filename)
                 
                 # Create playlist summary log
+                is_playlist_success = failed_downloads == 0
                 playlist_log = {
                     "タイムスタンプ": datetime.now(jst).isoformat(),
                     "URL": video_url,
@@ -396,10 +401,9 @@ def main():
                     "形式": format_choice,
                     "フォーマット": quality,
                     "ファイル名": f"{playlist_title} ({total_downloads}件)",
-                    "成否とエラーメッセージ": f"Total: {total_downloads}, Success: {successful_downloads}, Failed: {failed_downloads}"
+                    "成否": is_playlist_success,
+                    "エラーメッセージ": "" if is_playlist_success else '; '.join(error_messages)
                 }
-                if failed_downloads > 0:
-                    playlist_log["成否とエラーメッセージ"] += f", Errors: {'; '.join(error_messages[:3])}"
 
                 # Write playlist log to local file
                 write_log_to_file(playlist_log)
@@ -453,7 +457,8 @@ def main():
         error_log = {
             "タイムスタンプ": datetime.now(jst).isoformat(),
             "URL": video_url,
-            "成否とエラーメッセージ": f"予期しないエラー: {str(e)}"
+            "成否": False,
+            "エラーメッセージ": f"予期しないエラー: {str(e)}"
         }
         write_log_to_file(error_log)
 
