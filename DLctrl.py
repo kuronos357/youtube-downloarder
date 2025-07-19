@@ -20,7 +20,6 @@ def get_default_config():
     # 基本的な設定項目を辞書として定義
     base_config = {
         "video_quality": "best",
-        "mkdir_list": True,
         "makedirector": True,
         "enable_logging": True,
         "log_file_path": log_file_path,
