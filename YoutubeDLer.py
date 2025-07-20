@@ -169,9 +169,10 @@ def get_download_options(dl_dir, format_choice):
     volume_level = data.get('volume_level', 1.0)
     use_cookies = data.get('use_cookies', False)
     cookie_browser = data.get('cookie_browser', 'chrome')
-    
+
     options = {
-        'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'), # 出力ファイル名テンプレート
+        'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'),
+        'postprocessors': [],
     }
 
     # Cookieを使用する場合の設定
@@ -191,57 +192,35 @@ def get_download_options(dl_dir, format_choice):
         quality_selector = f"[height<=?{video_quality}]"
 
     # フォーマットに応じたオプション設定
-    if format_choice == "mp4":
-        options['format'] = f'bestvideo{quality_selector}[ext=mp4]+bestaudio[ext=m4a]/best{quality_selector}[ext=mp4]/best'
+    video_formats = ["mp4", "webm"]
+    audio_formats = ["mp3", "wav", "flac"]
+
+    if format_choice in video_formats:
+        options['format'] = f'bestvideo{quality_selector}+bestaudio/best{quality_selector}/best'
+        pp = {'key': 'FFmpegVideoConvertor', 'preferedformat': format_choice}
         if enable_volume_adjustment:
-            options['postprocessors'] = [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mp4',
-                'params': ['-af', f'volume={volume_level}']
-            }]
-    elif format_choice == "mp3":
-        options['format'] = 'bestaudio'
-        postprocessors = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }]
+            pp['params'] = ['-af', f'volume={volume_level}']
+        options['postprocessors'].append(pp)
+    elif format_choice in audio_formats:
+        options['format'] = 'bestaudio/best'
+        pp = {'key': 'FFmpegExtractAudio', 'preferredcodec': format_choice}
+        if format_choice == 'mp3':
+            pp['preferredquality'] = '192'
         if enable_volume_adjustment:
-            postprocessors[0]['params'] = ['-af', f'volume={volume_level}']
-        options['postprocessors'] = postprocessors
-    elif format_choice == "webm":
-        options['format'] = f'bestvideo{quality_selector}[ext=webm]+bestaudio[ext=webm]/best{quality_selector}[ext=webm]/best'
-        if enable_volume_adjustment:
-            options['postprocessors'] = [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'webm',
-                'params': ['-af', f'volume={volume_level}']
-            }]
-    elif format_choice == "wav":
-        options['format'] = 'bestaudio'
-        postprocessors = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'wav',
-        }]
-        if enable_volume_adjustment:
-            postprocessors[0]['params'] = ['-af', f'volume={volume_level}']
-        options['postprocessors'] = postprocessors
-    elif format_choice == "flac":
-        options['format'] = 'bestaudio'
-        postprocessors = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'flac',
-        }]
-        if enable_volume_adjustment:
-            postprocessors[0]['params'] = ['-af', f'volume={volume_level}']
-        options['postprocessors'] = postprocessors
-    else: # デフォルトは最高品質
+            pp['params'] = ['-af', f'volume={volume_level}']
+        options['postprocessors'].append(pp)
+    else:  # デフォルトは最高品質
         options['format'] = 'best'
         if enable_volume_adjustment:
-            options['postprocessors'] = [{
-                'key': 'FFmpegVideoConvertor',
+            # FFmpegPostProcessor is more generic for unknown file types
+            options['postprocessors'].append({
+                'key': 'FFmpegPostProcessor',
                 'params': ['-af', f'volume={volume_level}']
-            }]
+            })
+
+    # If no postprocessors were added, remove the empty list
+    if not options['postprocessors']:
+        del options['postprocessors']
 
     return options
 
@@ -355,21 +334,35 @@ def main():
     filenames = []
 
     try:
-        # URLが再生リストか単体動画かを判定
-        is_playlist = "playlist" in video_url
+        # yt-dlpでURLの情報を取得し、プレイリストかどうかを判定
+        ydl_opts = {
+            'quiet': True,
+            'extract_flat': True,
+            'skip_download': True
+        }
+        if data.get('use_cookies', False):
+            ydl_opts['cookies-from-browser'] = data.get('cookie_browser', 'chrome')
+
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+
+        is_playlist = 'entries' in info and info['entries']
+
         if is_playlist:
             # 再生リストの処理
-            video_urls, playlist_title = get_video_urls(video_url)
+            video_urls = [entry['url'] for entry in info['entries'] if 'url' in entry]
+            playlist_title = info.get('title', '再生リスト')
+            playlist_duration = 0
+
             if not video_urls:
                 print("再生リストから動画URLを取得できませんでした。")
                 error_messages.append("再生リストからURL取得失敗")
                 failed_downloads = 1
                 total_downloads = 1
             else:
-                # 再生リスト用のディレクトリを作成するかどうか
                 makedirector = data.get('makedirector', True)
                 if makedirector:
-                    safe_playlist_title = re.sub(r'[\\/*?:"<>|]', "_", playlist_title) # ファイル名に使えない文字を置換
+                    safe_playlist_title = re.sub(r'[\\/*?:"<>|]', "_", playlist_title)
                     playlist_dir = os.path.join(output_dir, safe_playlist_title)
                     os.makedirs(playlist_dir, exist_ok=True)
                     final_output_dir = playlist_dir
@@ -381,37 +374,38 @@ def main():
                 total_downloads = len(video_urls)
                 print(f"再生リスト内の動画数: {total_downloads}")
                 
-                video_logs = [] # 個々の動画のログを保存するリスト
+                video_logs = []
                 for i, url in enumerate(video_urls, 1):
                     print(f"\nダウンロード中 ({i}/{total_downloads}): ")
-                    success, error_msg, filename = download_video(url, final_output_dir, format_choice)
+                    success, error_msg, video_info = download_video(url, final_output_dir, format_choice)
                     
-                    # 動画ごとのログを作成
-                    is_success = success
+                    filename = video_info.get('title', 'タイトル取得失敗')
+                    duration = video_info.get('duration')
+                    if duration:
+                        playlist_duration += duration
+
                     video_log = {
                         "タイムスタンプ": datetime.now(jst).isoformat(),
                         "URL": url,
                         "出力ディレクトリ": final_output_dir,
                         "形式": format_choice,
                         "フォーマット": quality,
-                        "ファイル名": filename or "タイトル取得失敗",
-                        "成否": is_success,
-                        "エラーメッセージ": "" if is_success else error_msg
+                        "ファイル名": filename,
+                        "時間": duration,
+                        "成否": success,
+                        "エラーメッセージ": "" if success else error_msg
                     }
                     video_logs.append(video_log)
 
                     if success:
                         successful_downloads += 1
-                        if filename:
-                            filenames.append(filename)
+                        filenames.append(filename)
                     else:
                         failed_downloads += 1
                         if error_msg:
                             error_messages.append(error_msg)
-                        if filename:
-                            filenames.append(filename)
+                        filenames.append(filename)
                 
-                # 再生リスト全体のサマリーログを作成
                 is_playlist_success = failed_downloads == 0
                 playlist_log = {
                     "タイムスタンプ": datetime.now(jst).isoformat(),
@@ -420,14 +414,13 @@ def main():
                     "形式": format_choice,
                     "フォーマット": quality,
                     "ファイル名": f"{playlist_title} ({total_downloads}件)",
+                    "時間": playlist_duration,
                     "成否": is_playlist_success,
                     "エラーメッセージ": "" if is_playlist_success else '; '.join(error_messages)
                 }
 
-                # サマリーログをファイルに書き込み
                 write_log_to_file(playlist_log)
 
-                # Notionへのアップロード処理
                 if data.get('enable_notion_upload', False):
                     print("\nNotionへのアップロードを開始します...")
                     parent_page_id = upload_to_notion(playlist_log)
@@ -436,22 +429,23 @@ def main():
                         print("各動画のログをサブアイテムとして登録します。")
                         for v_log in video_logs:
                             upload_to_notion(v_log, parent_page_id=parent_page_id)
-                            # 個々の動画ログもローカルに保存
                             write_log_to_file(v_log)
                     else:
                         print("親ページの作成に失敗したため、サブアイテムの登録をスキップします。")
-                        # 親ページの作成に失敗しても、個々の動画ログはローカルに保存
                         for v_log in video_logs:
                             write_log_to_file(v_log)
                 else:
-                    # Notionが無効でも、個々の動画ログはローカルに保存
                     for v_log in video_logs:
                         write_log_to_file(v_log)
 
         else: # 単体動画のダウンロード
             print("個別動画をダウンロードしています...")
             total_downloads = 1
-            success, error_msg, filename = download_video(video_url, output_dir, format_choice)
+            success, error_msg, video_info = download_video(video_url, output_dir, format_choice)
+            
+            filename = video_info.get('title') if video_info else None
+            duration = video_info.get('duration') if video_info else None
+
             if success:
                 successful_downloads = 1
                 if filename:
@@ -463,8 +457,8 @@ def main():
                 if filename:
                     filenames.append(filename)
 
-            # セッション情報を初期化・更新してログに記録
             initialize_session(video_url, output_dir, format_choice, quality)
+            session_info['時間'] = duration
             update_session_result(total_downloads, successful_downloads, failed_downloads, error_messages, filenames)
             
             write_log_to_file(session_info)
@@ -472,7 +466,6 @@ def main():
 
     except Exception as e:
         print(f"予期しないエラーが発生しました: {e}")
-        # エラーログを記録
         error_log = {
             "タイムスタンプ": datetime.now(jst).isoformat(),
             "URL": video_url,
@@ -482,7 +475,6 @@ def main():
         write_log_to_file(error_log)
 
     finally:
-        # 最終結果を表示
         print(f"\n{'='*50}")
         print("ダウンロード完了！")
         print(f"総数: {total_downloads}, 成功: {successful_downloads}, 失敗: {failed_downloads}")
