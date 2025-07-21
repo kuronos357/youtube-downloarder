@@ -379,8 +379,8 @@ def main():
                     print(f"\nダウンロード中 ({i}/{total_downloads}): ")
                     success, error_msg, video_info = download_video(url, final_output_dir, format_choice)
                     
-                    filename = video_info.get('title', 'タイトル取得失敗')
-                    duration = video_info.get('duration')
+                    filename = video_info.get('title', 'タイトル取得失敗') if video_info else 'タイトル取得失敗'
+                    duration = video_info.get('duration') if video_info else None
                     if duration:
                         playlist_duration += duration
 
