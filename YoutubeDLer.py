@@ -51,6 +51,12 @@ def upload_to_notion(log_entry, parent_page_id=None):
         "エラーメッセージ": {"rich_text": [{"text": {"content": log_entry.get("エラーメッセージ", "")}}]}
     }
 
+    # 時間（分）をプロパティに追加
+    duration_seconds = log_entry.get("時間")
+    if duration_seconds is not None:
+        duration_minutes = round(duration_seconds / 60, 2)
+        properties["時間"] = {"number": duration_minutes}
+
     # 親ページが指定されている場合はリレーションを追加（プレイリスト用）
     if parent_page_id:
         properties["親アイテム"] = {"relation": [{"id": parent_page_id}]}
