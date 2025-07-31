@@ -9,79 +9,6 @@ from pathlib import Path
 # 設定ファイル(config.json)のパスを定義
 CONFIG_FILE = Path(__file__).parent / '設定・履歴/config.json'
 
-def get_default_config():
-    """
-    デフォルトの設定を生成する関数。
-    初回起動時や設定ファイルが壊れている場合に使用される。
-    """
-    home_dir = Path.home()
-    log_file_path = str(Path(__file__).parent / '設定・履歴/log.json')
-    
-    # 基本的な設定項目を辞書として定義
-    base_config = {
-        "video_quality": "best",
-        "makedirector": True,
-        "enable_logging": True,
-        "log_file_path": log_file_path,
-        "enable_volume_adjustment": False,
-        "volume_level": 1.0,
-        "enable_notion_upload": False,
-        "notion_api_key": "",
-        "notion_database_id": "",
-        "use_cookies": False,
-        "cookie_browser": "chrome",
-        "directories": [
-            {"path": str(home_dir / "Music"), "format": "mp3"},
-            {"path": str(home_dir / "Videos"), "format": "webm"},
-            {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
-        ],
-        "default_directory_index": 1,
-    }
-    
-    # OSに応じてffmpegのデフォルトパスを設定
-    if os.name == 'nt': # Windowsの場合
-        base_config["ffmpeg_path"] = "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe"
-    else: # Linuxやその他のOSの場合
-        base_config["ffmpeg_path"] = "ffmpeg"
-        
-    return base_config
-
-def load_config():
-    """
-    設定ファイル(config.json)を読み込む関数。
-    ファイルが存在しない、または読み込みに失敗した場合はデフォルト設定を返す。
-    """
-    if not CONFIG_FILE.exists():
-        return get_default_config().copy()
-    
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except (json.JSONDecodeError, IOError):
-        # JSONデコードエラーやI/Oエラーの場合はデフォルト設定を返す
-        return get_default_config().copy()
-
-    # デフォルト設定に存在して、読み込んだ設定に存在しないキーを追加
-    default_conf = get_default_config()
-    for key, value in default_conf.items():
-        config.setdefault(key, value)
-    
-    # 古い設定キーを削除
-    for key in ["interactive_selection", "download_subtitles", "embed_subtitles"]:
-        config.pop(key, None)
-
-    return config
-
-def save_config(config):
-    """
-    設定をJSONファイルに保存する関数。
-    """
-    # 設定ファイルを保存するディレクトリが存在しない場合は作成
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        # JSONを整形して書き込む (indent=4, ensure_ascii=False)
-        json.dump(config, f, indent=4, ensure_ascii=False)
-
 class ConfigGUI(tk.Tk):
     """
     設定を管理するためのGUIアプリケーションクラス。
@@ -92,12 +19,78 @@ class ConfigGUI(tk.Tk):
         """
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x800')
+        self.geometry('1000x700')
         self.resizable(True, True)
-        self.config_data = load_config() # 設定を読み込む
+        
+        # 設定の読み込み
+        if not CONFIG_FILE.exists():
+            self.config_data = self._get_default_config().copy()
+        else:
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                
+                default_conf = self._get_default_config()
+                for key, value in default_conf.items():
+                    config.setdefault(key, value)
+                
+                for key in ["interactive_selection", "download_subtitles", "embed_subtitles"]:
+                    config.pop(key, None)
+                
+                self.config_data = config
+            except (json.JSONDecodeError, IOError):
+                self.config_data = self._get_default_config().copy()
+
         self.dir_widgets = [] # ディレクトリ設定のウィジェットを保持するリスト
         self._create_vars() # Tkinter変数を初期化
         self._build_ui() # UIを構築
+
+    def _get_default_config(self):
+        """
+        デフォルトの設定を生成する関数。
+        初回起動時や設定ファイルが壊れている場合に使用される。
+        """
+        home_dir = Path.home()
+        log_file_path = str(Path(__file__).parent / '設定・履歴/log.json')
+        
+        # 基本的な設定項目を辞書として定義
+        base_config = {
+            "video_quality": "best",
+            "makedirector": True,
+            "enable_logging": True,
+            "log_file_path": log_file_path,
+            "enable_volume_adjustment": False,
+            "volume_level": 1.0,
+            "enable_notion_upload": False,
+            "notion_api_key": "",
+            "notion_database_id": "",
+            "use_cookies": False,
+            "cookie_browser": "chrome",
+            "directories": [
+                {"path": str(home_dir / "Music"), "format": "mp3"},
+                {"path": str(home_dir / "Videos"), "format": "webm"},
+                {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
+            ],
+            "default_directory_index": 1
+        }
+        
+        # OSに応じてffmpegのデフォルトパスを設定
+        if os.name == 'nt': # Windowsの場合
+            base_config["ffmpeg_path"] = "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe"
+            base_config["directories"]=[
+                {"path": str(home_dir / "Music"), "format": "mp3"},
+                {"path": str(home_dir / "Videos"), "format": "webm"},
+                {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
+            ]
+        else: # Linuxやその他のOSの場合
+            base_config["ffmpeg_path"] = "ffmpeg"
+            base_config["directories"]=[
+                {"path": str(home_dir / "Music"), "format": "mp3"},
+                {"path": str(home_dir / "Videos"), "format": "webm"},
+                {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
+            ]
+            
+        return base_config
 
     def _create_vars(self):
         """
@@ -418,25 +411,19 @@ class ConfigGUI(tk.Tk):
         if path := filedialog.asksaveasfilename(title='ログファイルの保存先を選択', defaultextension='.json', filetypes=[('JSON files', '*.json'), ('All files', '*.*')]):
             self.log_path_var.set(path)
 
-    def _open_path(self, path):
-        """
-        指定されたパスをOSのデフォルトアプリケーションで開く。
-        """
-        try:
-            if sys.platform == 'win32':
-                os.startfile(path)
-            elif sys.platform == 'darwin':
-                subprocess.run(['open', path], check=True)
-            else:
-                subprocess.run(['xdg-open', path], check=True)
-        except Exception as e:
-            messagebox.showerror('エラー', f'パスを開けませんでした: {e}\nパス: {path}')
-
     def open_config(self):
         """
         設定ファイル(config.json)を開く。
         """
-        self._open_path(CONFIG_FILE)
+        try:
+            if sys.platform == 'win32':
+                os.startfile(CONFIG_FILE)
+            elif sys.platform == 'darwin':
+                subprocess.run(['open', CONFIG_FILE], check=True)
+            else:
+                subprocess.run(['xdg-open', CONFIG_FILE], check=True)
+        except Exception as e:
+            messagebox.showerror('エラー', f'パスを開けませんでした: {e}\nパス: {CONFIG_FILE}')
 
     def on_save(self):
         """
@@ -462,7 +449,11 @@ class ConfigGUI(tk.Tk):
             self.config_data[key] = value
         
         try:
-            save_config(self.config_data)
+            # 設定ファイルを保存する
+            CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                # JSONを整形して書き込む (indent=4, ensure_ascii=False)
+                json.dump(self.config_data, f, indent=4, ensure_ascii=False)
             return True
         except Exception as e:
             messagebox.showerror('エラー', f'設定の保存に失敗しました: {e}')
