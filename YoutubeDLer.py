@@ -298,7 +298,6 @@ def main():
         return
     else:
         print(f"処理対象URL: {video_url}")
-        print(f"動画タイトル:{info.get('title', 'Unknown Title')}")
     # URLがYouTubeの形式かチェック
     # デフォルト設定を取得
     output_dir, format_choice = get_default_settings()
