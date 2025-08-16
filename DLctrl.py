@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import subprocess
 import tkinter as tk
@@ -41,6 +42,7 @@ class ConfigGUI(tk.Tk):
             except (json.JSONDecodeError, IOError):
                 self.config_data = self._get_default_config().copy()
 
+        self._is_updating_notion_id = False
         self.dir_widgets = [] # ディレクトリ設定のウィジェットを保持するリスト
         self._create_vars() # Tkinter変数を初期化
         self._build_ui() # UIを構築
@@ -107,6 +109,7 @@ class ConfigGUI(tk.Tk):
         self.enable_notion_var = tk.BooleanVar(value=self.config_data.get('enable_notion_upload'))
         self.notion_api_key_var = tk.StringVar(value=self.config_data.get('notion_api_key'))
         self.notion_db_id_var = tk.StringVar(value=self.config_data.get('notion_database_id'))
+        self.notion_db_id_var.trace_add('write', self._on_notion_db_id_change)
         self.use_cookies_var = tk.BooleanVar(value=self.config_data.get('use_cookies'))
         self.cookie_browser_var = tk.StringVar(value=self.config_data.get('cookie_browser'))
 
@@ -273,10 +276,28 @@ class ConfigGUI(tk.Tk):
         self.notion_api_key_entry = ttk.Entry(self.notion_widgets_frame, textvariable=self.notion_api_key_var, show='*')
         self.notion_api_key_entry.pack(fill='x', pady=(0, 5))
 
-        self.notion_db_id_label = ttk.Label(self.notion_widgets_frame, text='NotionデータベースID:')
+        self.notion_db_id_label = ttk.Label(self.notion_widgets_frame, text='NotionデータベースのURLまたはID（IDとして貼り付けられます。）:')
         self.notion_db_id_label.pack(anchor='w')
         self.notion_db_id_entry = ttk.Entry(self.notion_widgets_frame, textvariable=self.notion_db_id_var)
         self.notion_db_id_entry.pack(fill='x')
+
+    def _on_notion_db_id_change(self, *args):
+        if hasattr(self, '_is_updating_notion_id') and self._is_updating_notion_id:
+            return
+        
+        current_value = self.notion_db_id_var.get()
+        
+        if 'notion.so' in current_value and '/' in current_value:
+            try:
+                match = re.search(r'([a-fA-F0-9]{32})', current_value)
+                if match:
+                    db_id = match.group(1)
+                    if db_id != current_value:
+                        self._is_updating_notion_id = True
+                        self.notion_db_id_var.set(db_id)
+                        self._is_updating_notion_id = False
+            except Exception:
+                pass
 
     def _create_bottom_buttons(self, parent):
         """
