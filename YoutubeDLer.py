@@ -30,7 +30,9 @@ def upload_to_notion(log_entry, parent_page_id=None):
     database_id = data.get('notion_database_id')
 
     if not api_key or not database_id:
-        print("NotionのAPIキーまたはデータベースIDがconfig.jsonに設定されていません。")
+        error_msg = "NotionのAPIキーまたはデータベースIDがconfig.jsonに設定されていません。"
+        print(error_msg)
+        log_error(log_entry.get("URL"), error_msg)
         return None
 
     headers = {
@@ -73,9 +75,13 @@ def upload_to_notion(log_entry, parent_page_id=None):
         print(f"ログをNotionにアップロードしました。 Page ID: {page_id}")
         return page_id
     except requests.exceptions.RequestException as e:
-        print(f"Notionへのアップロードに失敗しました: {e}")
+        error_message = f"Notionへのアップロードに失敗しました: {e}"
+        print(error_message)
         if e.response:
-            print(f"Response: {e.response.text}")
+            response_text = e.response.text
+            print(f"Response: {response_text}")
+            error_message += f" | Response: {response_text}"
+        log_error(log_entry.get("URL"), error_message)
         return None
 
 def log_error(url, error_message):
