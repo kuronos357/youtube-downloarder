@@ -140,9 +140,17 @@ class ErrorLogger:
             return []
         try:
             with open(self.log_file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
+            # ファイルが空、壊れている、または見つからない場合は、新しい空のリストを返す
             return []
+
+        # ログファイルは常にリスト形式であるべき
+        if isinstance(data, list):
+            return data
+        
+        print("警告: ログファイルが予期しない形式（リストではない）です。ログを初期化します。")
+        return []
 
     def _write_logs(self, logs):
         """ログファイルに書き込む"""
