@@ -249,19 +249,23 @@ class YoutubeDownloader:
         if not video_url or "https" not in video_url:
             print("クリップボードにURLがありません。")
             return
-        print(f"処理対象URL: {video_url}")
 
         output_dir, format_choice = self._get_default_settings()
         if not output_dir or not format_choice:
             return
 
         try:
+            # 先に動画情報を取得してタイトルを表示
             ydl_opts = {'quiet': True, 'extract_flat': True, 'skip_download': True}
             if self.config.get('use_cookies', False):
                 ydl_opts['cookies-from-browser'] = self.config.get('cookie_browser', 'chrome')
             
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
+
+            title = info.get('title', 'タイトル不明')
+            print(f"処理対象: {title}")
+            print(f"URL: {video_url}")
             
             is_playlist = 'entries' in info and info.get('entries')
             if is_playlist:
@@ -269,6 +273,7 @@ class YoutubeDownloader:
             else:
                 self._process_single_video(video_url, output_dir, format_choice)
         except Exception as e:
+            print(f"処理対象URL: {video_url}")
             print(f"予期しないエラーが発生しました: {e}")
             self.error_logger.log(video_url, f"予期しないエラー: {str(e)}")
 
