@@ -167,15 +167,6 @@ class YoutubeDownloader:
         self.notion_uploader = notion_uploader
         self.error_logger = error_logger
         self.jst = timezone(timedelta(hours=9), 'JST')
-        self._setup_ffmpeg()
-
-    def _setup_ffmpeg(self):
-        """ffmpegのパスを設定する"""
-        ffmpeg_path = self.config.get('ffmpeg_path')
-        if ffmpeg_path and os.path.exists(ffmpeg_path):
-            ffmpeg_dir = os.path.dirname(ffmpeg_path)
-            if ffmpeg_dir not in os.environ['PATH']:
-                os.environ['PATH'] += os.pathsep + ffmpeg_dir
 
     def get_download_options(self, dl_dir, format_choice):
         """yt-dlpのダウンロードオプションを生成する"""
@@ -183,33 +174,48 @@ class YoutubeDownloader:
         video_quality = self.config.get('video_quality', 'best')
         enable_volume_adjustment = self.config.get('enable_volume_adjustment', False)
         volume_level = self.config.get('volume_level', 1.0)
-        
-        options = {'outtmpl': os.path.join(dl_dir, '%(title)s.%(ext)s'), 'postprocessors': []}
+
+        options = {
+            'outtmpl': os.path.join(dl_dir, f'%(title)s.%(ext)s'),
+        }
+
+        # ffmpegのパスとクッキーを設定
+        ffmpeg_path = self.config.get('ffmpeg_path')
+        if ffmpeg_path and os.path.exists(ffmpeg_path):
+            options['ffmpeg_location'] = ffmpeg_path
         if self.config.get('use_cookies', False):
             options['cookies-from-browser'] = self.config.get('cookie_browser', 'chrome')
 
+        # フォーマットと品質を設定
         quality_selector = f"[height<=?{video_quality}]" if str(video_quality).isdigit() and video_quality != 'best' else ""
         
-        postprocessor = None
+        postprocessors = []
+        
         if format_choice in ["mp4", "webm"]:
             options['format'] = f'bestvideo{quality_selector}+bestaudio/best{quality_selector}/best'
-            postprocessor = {'key': 'FFmpegVideoConvertor', 'preferedformat': format_choice}
+            pp = {'key': 'FFmpegVideoConvertor', 'preferedformat': format_choice}
+            postprocessors.append(pp)
         elif format_choice in ["mp3", "wav", "flac"]:
             options['format'] = 'bestaudio/best'
-            postprocessor = {'key': 'FFmpegExtractAudio', 'preferredcodec': format_choice}
+            pp = {'key': 'FFmpegExtractAudio', 'preferredcodec': format_choice}
             if format_choice == 'mp3':
-                postprocessor['preferredquality'] = '192'
+                pp['preferredquality'] = '192'
+            postprocessors.append(pp)
         else:
             options['format'] = 'best'
 
+        # 音量調整
         if enable_volume_adjustment:
-            if postprocessor:
-                postprocessor.setdefault('params', []).extend(['-af', f'volume={volume_level}'])
-            else: # デフォルトフォーマット用
-                postprocessor = {'key': 'FFmpegPostProcessor', 'params': ['-af', f'volume={volume_level}']}
+            volume_filter = ['-af', f'volume={volume_level}']
+            # 既存のffmpegポストプロセッサーがあれば、それにフィルターを追加する
+            if postprocessors and postprocessors[0]['key'].startswith('FFmpeg'):
+                postprocessors[0].setdefault('params', []).extend(volume_filter)
+            else:
+                # なければ、音量調整のためだけに新しいポストプロセッサーを追加する
+                postprocessors.append({'key': 'FFmpegPostProcessor', 'params': volume_filter})
 
-        if postprocessor:
-            options['postprocessors'].append(postprocessor)
+        if postprocessors:
+            options['postprocessors'] = postprocessors
         
         return options
 
