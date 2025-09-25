@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import sys
 import pyperclip
 import requests
 from yt_dlp import YoutubeDL
@@ -251,9 +252,15 @@ class YoutubeDownloader:
 
     def run(self):
         """スクリプトのメイン処理を実行する"""
-        video_url = pyperclip.paste()
+        if len(sys.argv) > 1:
+            video_url = sys.argv[1]
+            print("コマンドライン引数からURLを取得しました。")
+        else:
+            video_url = pyperclip.paste()
+            print("クリップボードからURLを取得しました。")
+
         if not video_url or "https" not in video_url:
-            print("クリップボードにURLがありません。")
+            print("有効なURLが指定されていません。")
             return
 
         output_dir, format_choice = self._get_default_settings()
@@ -280,8 +287,9 @@ class YoutubeDownloader:
                 self._process_single_video(video_url, output_dir, format_choice)
         except Exception as e:
             print(f"処理対象URL: {video_url}")
-            print(f"予期しないエラーが発生しました: {e}")
-            self.error_logger.log(video_url, f"予期しないエラー: {str(e)}")
+            clean_error_msg = re.sub(r'\x1b\[[0-9;]*m', '', str(e))
+            print(f"予期しないエラーが発生しました: {clean_error_msg}")
+            self.error_logger.log(video_url, f"予期しないエラー: {clean_error_msg}")
 
     def _get_default_settings(self):
         """デフォルトの保存先とフォーマットを取得する"""
