@@ -1,3 +1,5 @@
 yt-dlp
 requests
 pyperclip
+google-api-python-client
+google-auth-oauthlib

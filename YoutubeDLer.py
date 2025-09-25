@@ -7,6 +7,12 @@ import requests
 from yt_dlp import YoutubeDL
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
 
 class Config:
     """設定ファイルから設定を読み込み、管理するクラス"""
@@ -90,6 +96,115 @@ class NotionUploader:
             properties["親アイテム"] = {"relation": [{"id": parent_page_id}]}
         return properties
 
+class GoogleDriveUploader:
+    """Handles uploading files to Google Drive."""
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+    def __init__(self, config, error_logger):
+        self.config = config
+        self.error_logger = error_logger
+        self.enabled = self.config.get('destination') == 'gdrive'
+        self.credentials_path = self.config.get('google_drive_credentials_path')
+        self.token_path = self.config.get('google_drive_token_path')
+        self.parent_folder_id = self.config.get('google_drive_parent_folder_id')
+        self.service = self._get_drive_service()
+
+    def _get_drive_service(self):
+        if not self.enabled:
+            return None
+        
+        creds = None
+        if self.token_path and os.path.exists(self.token_path):
+            creds = Credentials.from_authorized_user_file(self.token_path, self.SCOPES)
+        
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"Failed to refresh token: {e}, re-authenticating.")
+                    creds = None # Force re-authentication
+            
+            if not creds:
+                if not self.credentials_path or not os.path.exists(self.credentials_path):
+                    print("Error: Google Drive credentials file not found.")
+                    self.error_logger.log("Google Drive Auth", "credentials.json not found at specified path.")
+                    return None
+                try:
+                    flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, self.SCOPES)
+                    creds = flow.run_local_server(port=0)
+                except Exception as e:
+                    print(f"Failed to run auth flow: {e}")
+                    self.error_logger.log("Google Drive Auth", f"Failed to run auth flow: {e}")
+                    return None
+
+            if creds and self.token_path:
+                with open(self.token_path, 'w') as token:
+                    token.write(creds.to_json())
+        
+        try:
+            return build('drive', 'v3', credentials=creds)
+        except HttpError as error:
+            print(f'An error occurred building Drive service: {error}')
+            self.error_logger.log("Google Drive Auth", f"Failed to build service: {error}")
+            return None
+
+    def upload_file(self, file_path, folder_id=None):
+        if not self.service or not os.path.exists(file_path):
+            print("Google Drive service not available or file does not exist.")
+            return None
+
+        file_metadata = {
+            'name': os.path.basename(file_path),
+            'parents': [folder_id or self.parent_folder_id]
+        }
+        
+        if not (folder_id or self.parent_folder_id):
+            print("Error: Google Drive parent folder ID is not set.")
+            self.error_logger.log(file_path, "Google Drive parent folder ID is not set.")
+            return None
+
+        media = MediaFileUpload(file_path, resumable=True)
+        
+        try:
+            print(f"Uploading {os.path.basename(file_path)} to Google Drive...")
+            file = self.service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+            print(f"File ID: {file.get('id')}. Upload successful.")
+            return file.get('id')
+        except HttpError as error:
+            print(f'An error occurred during upload: {error}')
+            self.error_logger.log(file_path, f"Google Drive upload failed: {error}")
+            return None
+
+    def find_or_create_folder(self, folder_name):
+        if not self.service:
+            return self.parent_folder_id
+
+        try:
+            # Search for the folder first
+            query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{self.parent_folder_id}' in parents and trashed=false"
+            response = self.service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+            folders = response.get('files', [])
+            if folders:
+                print(f"Found existing Google Drive folder: '{folder_name}'")
+                return folders[0].get('id')
+
+            # If not found, create it
+            print(f"Creating Google Drive folder: '{folder_name}'...")
+            file_metadata = {
+                'name': folder_name,
+                'mimeType': 'application/vnd.google-apps.folder',
+                'parents': [self.parent_folder_id]
+            }
+            folder = self.service.files().create(body=file_metadata, fields='id').execute()
+            print(f"Folder created with ID: {folder.get('id')}")
+            return folder.get('id')
+        except HttpError as error:
+            print(f'An error occurred while finding/creating folder: {error}')
+            self.error_logger.log(folder_name, f"Google Drive folder operation failed: {error}")
+            return self.parent_folder_id # Fallback to parent
+
+
 class ErrorLogger:
     """エラー情報をローカルのJSONファイルに記録するクラス"""
     def __init__(self, config):
@@ -163,10 +278,11 @@ class ErrorLogger:
 
 class YoutubeDownloader:
     """YouTube動画のダウンロードを処理するクラス"""
-    def __init__(self, config, notion_uploader, error_logger):
+    def __init__(self, config, notion_uploader, error_logger, gdrive_uploader):
         self.config = config
         self.notion_uploader = notion_uploader
         self.error_logger = error_logger
+        self.gdrive_uploader = gdrive_uploader
         self.jst = timezone(timedelta(hours=9), 'JST')
 
     def get_download_options(self, dl_dir, format_choice):
@@ -236,11 +352,11 @@ class YoutubeDownloader:
                 if os.path.exists(final_filepath):
                     msg = f"ファイルが既に存在: {final_filename}"
                     print(f"ダウンロードを中止します: {msg}")
-                    return False, msg, info
+                    return False, msg, info, final_filepath
 
                 ydl.download([url])
                 print(f"✓ ダウンロード成功: {info.get('title', 'Unknown Title')}")
-                return True, None, info
+                return True, None, info, final_filepath
             except Exception as e:
                 clean_error_msg = re.sub(r'\x1b\[[0-9;]*m', '', str(e))
                 print(f"✗ エラーが発生しました: {clean_error_msg}")
@@ -248,7 +364,7 @@ class YoutubeDownloader:
                     info = ydl.extract_info(url, download=False)
                 except Exception:
                     info = None
-                return False, clean_error_msg, info
+                return False, clean_error_msg, info, None
 
     def run(self):
         """スクリプトのメイン処理を実行する"""
@@ -279,6 +395,14 @@ class YoutubeDownloader:
             title = info.get('title', 'タイトル不明')
             print(f"処理対象: {title}")
             print(f"URL: {video_url}")
+
+            destination = self.config.get('destination', 'local')
+            if destination == 'gdrive':
+                gdrive_folder_id = self.gdrive_uploader.parent_folder_id
+                print(f"保存先: Google Drive (フォルダID: {gdrive_folder_id})")
+            else:
+                print(f"保存先: ローカル ({output_dir})")
+            print(f"フォーマット: {format_choice}")
             
             is_playlist = 'entries' in info and info.get('entries')
             if is_playlist:
@@ -314,10 +438,18 @@ class YoutubeDownloader:
     def _process_single_video(self, url, output_dir, format_choice):
         """単一動画のダウンロード処理"""
         print("個別動画をダウンロードしています...")
-        success, error_msg, video_info = self.download_video(url, output_dir, format_choice)
+        success, error_msg, video_info, final_filepath = self.download_video(url, output_dir, format_choice)
         
         if success:
             self.error_logger.mark_as_resolved(url)
+            if self.gdrive_uploader.enabled and final_filepath:
+                upload_id = self.gdrive_uploader.upload_file(final_filepath)
+                if upload_id:
+                    try:
+                        os.remove(final_filepath)
+                        print(f"ローカルファイルを削除しました: {final_filepath}")
+                    except OSError as e:
+                        print(f"ローカルファイルの削除に失敗しました: {e}")
         else:
             self.error_logger.log(url, error_msg)
 
@@ -335,8 +467,15 @@ class YoutubeDownloader:
             return
 
         playlist_title = info.get('title', '再生リスト')
-        final_output_dir = self._create_playlist_directory(output_dir, playlist_title)
+        local_output_dir = self._create_playlist_directory(output_dir, playlist_title)
         
+        gdrive_folder_id = None
+        if self.gdrive_uploader.enabled:
+            if self.config.get('google_drive_create_playlist_folder', True):
+                gdrive_folder_id = self.gdrive_uploader.find_or_create_folder(playlist_title)
+            else:
+                gdrive_folder_id = self.gdrive_uploader.parent_folder_id
+
         stats = {'total': len(video_urls), 'success': 0, 'failed': 0}
         playlist_duration = 0
         error_messages = []
@@ -344,24 +483,32 @@ class YoutubeDownloader:
 
         for i, url in enumerate(video_urls, 1):
             print(f"\nダウンロード中 ({i}/{stats['total']}): ")
-            success, error_msg, video_info = self.download_video(url, final_output_dir, format_choice)
+            success, error_msg, video_info, final_filepath = self.download_video(url, local_output_dir, format_choice)
             
             duration = video_info.get('duration') if video_info else 0
             playlist_duration += duration
             
-            video_log = self._create_log_entry(url, final_output_dir, format_choice, success, error_msg, video_info)
+            video_log = self._create_log_entry(url, local_output_dir, format_choice, success, error_msg, video_info)
             video_logs.append(video_log)
 
             if success:
                 stats['success'] += 1
                 self.error_logger.mark_as_resolved(url)
+                if self.gdrive_uploader.enabled and final_filepath:
+                    upload_id = self.gdrive_uploader.upload_file(final_filepath, folder_id=gdrive_folder_id)
+                    if upload_id:
+                        try:
+                            os.remove(final_filepath)
+                            print(f"ローカルファイルを削除しました: {final_filepath}")
+                        except OSError as e:
+                            print(f"ローカルファイルの削除に失敗しました: {e}")
             else:
                 stats['failed'] += 1
                 if error_msg: error_messages.append(error_msg)
                 self.error_logger.log(url, error_msg)
 
         playlist_log = self._create_log_entry(
-            playlist_url, final_output_dir, format_choice, stats['failed'] == 0,
+            playlist_url, local_output_dir, format_choice, stats['failed'] == 0,
             '; '.join(error_messages),
             {'title': f"{playlist_title} ({stats['total']}件)", 'duration': playlist_duration}
         )
@@ -423,7 +570,8 @@ def main():
     config = Config(config_path)
     error_logger = ErrorLogger(config)
     notion_uploader = NotionUploader(config, error_logger)
-    downloader = YoutubeDownloader(config, notion_uploader, error_logger)
+    gdrive_uploader = GoogleDriveUploader(config, error_logger)
+    downloader = YoutubeDownloader(config, notion_uploader, error_logger, gdrive_uploader)
     
     downloader.run()
 
