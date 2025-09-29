@@ -55,7 +55,8 @@ class ConfigGUI(tk.Tk):
         """
         home_dir = Path.home()
         log_file_path = str(Path(__file__).parent / '設定・履歴/log.json')
-        
+        token_file_path = str(Path(__file__).parent / '設定・履歴/token.json')
+
         # 基本的な設定項目を辞書として定義
         base_config = {
             "video_quality": "best",
@@ -74,9 +75,15 @@ class ConfigGUI(tk.Tk):
                 {"path": str(home_dir / "Videos"), "format": "webm"},
                 {"path": str(home_dir / "Documents" / "Podcasts"), "format": "webm"},
             ],
-            "default_directory_index": 1
+            "default_directory_index": 1,
+            "destination": "local",
+            "enable_google_drive_upload": False,
+            "google_drive_parent_folder_id": "",
+            "google_drive_credentials_path": "",
+            "google_drive_create_playlist_folder": True,
+            "google_drive_token_path": token_file_path,
         }
-        
+
         # OSに応じてffmpegのデフォルトパスを設定
         if os.name == 'nt': # Windowsの場合
             base_config["ffmpeg_path"] = "C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe"

@@ -115,32 +115,39 @@ class GoogleDriveUploader:
         
         creds = None
         if self.token_path and os.path.exists(self.token_path):
-            creds = Credentials.from_authorized_user_file(self.token_path, self.SCOPES)
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_path, self.SCOPES)
+            except Exception as e:
+                print(f"トークンファイルの読み込みに失敗しました: {e}。再認証します。")
+                creds = None
         
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 try:
                     creds.refresh(Request())
                 except Exception as e:
-                    print(f"Failed to refresh token: {e}, re-authenticating.")
+                    print(f"トークンのリフレッシュに失敗しました: {e}。再認証します。")
                     creds = None # Force re-authentication
             
             if not creds:
                 if not self.credentials_path or not os.path.exists(self.credentials_path):
-                    print("Error: Google Drive credentials file not found.")
-                    self.error_logger.log("Google Drive Auth", "credentials.json not found at specified path.")
+                    print("エラー: Google Driveの認証情報ファイルが見つかりません。")
+                    self.error_logger.log("Google Drive Auth", f"認証情報ファイルが見つかりません。パス: {self.credentials_path}")
                     return None
                 try:
                     flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, self.SCOPES)
                     creds = flow.run_local_server(port=0)
                 except Exception as e:
-                    print(f"Failed to run auth flow: {e}")
-                    self.error_logger.log("Google Drive Auth", f"Failed to run auth flow: {e}")
+                    print(f"認証フローの実行に失敗しました: {e}")
+                    self.error_logger.log("Google Drive Auth", f"認証フローの実行に失敗しました: {e}")
                     return None
 
             if creds and self.token_path:
-                with open(self.token_path, 'w') as token:
-                    token.write(creds.to_json())
+                try:
+                    with open(self.token_path, 'w') as token:
+                        token.write(creds.to_json())
+                except Exception as e:
+                    print(f"トークンの保存に失敗しました: {e}")
         
         try:
             return build('drive', 'v3', credentials=creds)
