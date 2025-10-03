@@ -431,6 +431,7 @@ class YoutubeDownloader:
             print("ディレクトリが設定されていません。")
             return None, None
         
+        
         if not (0 <= default_index < len(directories)):
             default_index = 0
             
