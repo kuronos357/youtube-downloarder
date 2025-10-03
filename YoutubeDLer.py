@@ -434,6 +434,7 @@ class YoutubeDownloader:
         if not (0 <= default_index < len(directories)):
             default_index = 0
             
+            
         default_dir_info = directories[default_index]
         path = default_dir_info.get('path')
         if not os.path.isdir(path):
