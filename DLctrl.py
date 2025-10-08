@@ -20,7 +20,7 @@ class ConfigGUI(tk.Tk):
         """
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x1000')
+        self.geometry('1000x600')
         self.resizable(True, True)
         
         # 設定の読み込み
@@ -68,8 +68,9 @@ class ConfigGUI(tk.Tk):
             "enable_notion_upload": False,
             "notion_api_key": "",
             "notion_database_id": "",
-            "use_cookies": False,
+            "cookie_source": "none",
             "cookie_browser": "chrome",
+            "cookie_file_path": "",
             "directories": [
                 {"path": str(home_dir / "Music"), "format": "mp3"},
                 {"path": str(home_dir / "Videos"), "format": "webm"},
@@ -116,8 +117,9 @@ class ConfigGUI(tk.Tk):
         self.notion_api_key_var = tk.StringVar(value=self.config_data.get('notion_api_key'))
         self.notion_db_id_var = tk.StringVar(value=self.config_data.get('notion_database_id'))
         self.notion_db_id_var.trace_add('write', self._on_notion_db_id_change)
-        self.use_cookies_var = tk.BooleanVar(value=self.config_data.get('use_cookies'))
+        self.cookie_source_var = tk.StringVar(value=self.config_data.get('cookie_source', 'none'))
         self.cookie_browser_var = tk.StringVar(value=self.config_data.get('cookie_browser'))
+        self.cookie_file_path_var = tk.StringVar(value=self.config_data.get('cookie_file_path', ''))
 
         # Destination choice
         self.destination_var = tk.StringVar(value=self.config_data.get('destination', 'local'))
@@ -139,8 +141,9 @@ class ConfigGUI(tk.Tk):
             'enable_notion_upload': self.enable_notion_var,
             'notion_api_key': self.notion_api_key_var,
             'notion_database_id': self.notion_db_id_var,
-            'use_cookies': self.use_cookies_var,
+            'cookie_source': self.cookie_source_var,
             'cookie_browser': self.cookie_browser_var,
+            'cookie_file_path': self.cookie_file_path_var,
             'destination': self.destination_var,
             'google_drive_parent_folder_id': self.gdrive_parent_id_var,
             'google_drive_credentials_path': self.gdrive_credentials_path_var,
@@ -258,14 +261,33 @@ class ConfigGUI(tk.Tk):
         """
         cookie_config_frame = ttk.LabelFrame(parent, text="Cookie設定", padding=5)
         cookie_config_frame.pack(fill='x', pady=(0, 10))
-        ttk.Checkbutton(cookie_config_frame, text='ブラウザのCookieを使用して認証する', variable=self.use_cookies_var, command=self._update_cookie_controls).pack(anchor='w')
-        self.cookie_widgets_frame = ttk.Frame(cookie_config_frame)
-        self.cookie_widgets_frame.pack(fill='x', padx=20, pady=5)
-        self.cookie_browser_label = ttk.Label(self.cookie_widgets_frame, text='使用するブラウザ:')
+
+        # Radio buttons for selection
+        ttk.Radiobutton(cookie_config_frame, text='使用しない', variable=self.cookie_source_var, value='none', command=self._update_cookie_controls).pack(anchor='w')
+        ttk.Radiobutton(cookie_config_frame, text='ブラウザから自動取得', variable=self.cookie_source_var, value='browser', command=self._update_cookie_controls).pack(anchor='w')
+        
+        # --- Browser selection frame ---
+        self.cookie_browser_frame = ttk.Frame(cookie_config_frame)
+        self.cookie_browser_frame.pack(fill='x', padx=20, pady=2)
+        self.cookie_browser_label = ttk.Label(self.cookie_browser_frame, text='使用するブラウザ:')
         self.cookie_browser_label.pack(side='left', anchor='w')
         browser_options = ['chrome', 'firefox', 'brave', 'edge', 'opera', 'safari', 'vivaldi']
-        self.cookie_browser_combo = ttk.Combobox(self.cookie_widgets_frame, textvariable=self.cookie_browser_var, values=browser_options, state='readonly')
+        self.cookie_browser_combo = ttk.Combobox(self.cookie_browser_frame, textvariable=self.cookie_browser_var, values=browser_options, state='readonly')
         self.cookie_browser_combo.pack(side='left', padx=5)
+
+        ttk.Radiobutton(cookie_config_frame, text='Cookieファイルを使用する', variable=self.cookie_source_var, value='file', command=self._update_cookie_controls).pack(anchor='w')
+
+        # --- Cookie file selection frame ---
+        self.cookie_file_frame = ttk.Frame(cookie_config_frame)
+        self.cookie_file_frame.pack(fill='x', padx=20, pady=2)
+        self.cookie_file_label = ttk.Label(self.cookie_file_frame, text='Cookieファイルパス:')
+        self.cookie_file_label.pack(anchor='w')
+        file_entry_frame = ttk.Frame(self.cookie_file_frame)
+        file_entry_frame.pack(fill='x', pady=(2, 0))
+        self.cookie_file_entry = ttk.Entry(file_entry_frame, textvariable=self.cookie_file_path_var)
+        self.cookie_file_entry.pack(side='left', fill='x', expand=True)
+        self.cookie_file_btn = ttk.Button(file_entry_frame, text='選択', command=self.choose_cookie_file)
+        self.cookie_file_btn.pack(side='right', padx=(5, 0))
 
     def _create_log_config_section(self, parent):
         """
@@ -377,11 +399,20 @@ class ConfigGUI(tk.Tk):
 
     def _update_cookie_controls(self):
         """
-        Cookie使用が有効かどうかに応じて、関連ウィジェットの有効/無効を切り替える。
+        Cookie設定の選択に応じてUIの有効/無効を切り替える。
         """
-        state = 'normal' if self.use_cookies_var.get() else 'disabled'
-        self.cookie_browser_combo.config(state='readonly' if state == 'normal' else 'disabled')
-        self.cookie_browser_label.config(foreground='black' if state == 'normal' else 'gray')
+        source = self.cookie_source_var.get()
+        
+        # Browser controls
+        browser_state = 'readonly' if source == 'browser' else 'disabled'
+        self.cookie_browser_combo.config(state=browser_state)
+        self.cookie_browser_label.config(foreground='black' if source == 'browser' else 'gray')
+
+        # File controls
+        file_state = 'normal' if source == 'file' else 'disabled'
+        self.cookie_file_entry.config(state=file_state)
+        self.cookie_file_btn.config(state=file_state)
+        self.cookie_file_label.config(foreground='black' if source == 'file' else 'gray')
 
     def _build_directory_list(self):
         """
@@ -474,6 +505,13 @@ class ConfigGUI(tk.Tk):
         """
         if path := filedialog.asksaveasfilename(title='ログファイルの保存先を選択', defaultextension='.json', filetypes=[('JSON files', '*.json'), ('All files', '*.*')]):
             self.log_path_var.set(path)
+
+    def choose_cookie_file(self):
+        """
+        Cookieファイルの選択ダイアログを開く。
+        """
+        if path := filedialog.askopenfilename(title='Cookieファイルを選択', filetypes=[('Text files', '*.txt'), ('All files', '*.*')]):
+            self.cookie_file_path_var.set(path)
 
     def _create_gdrive_config_section(self, parent):
         """

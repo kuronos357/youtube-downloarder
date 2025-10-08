@@ -307,7 +307,13 @@ class YoutubeDownloader:
         ffmpeg_path = self.config.get('ffmpeg_path')
         if ffmpeg_path and os.path.exists(ffmpeg_path):
             options['ffmpeg_location'] = ffmpeg_path
-        if self.config.get('use_cookies', False):
+        
+        cookie_source = self.config.get('cookie_source')
+        if cookie_source == 'file':
+            cookie_file = self.config.get('cookie_file_path')
+            if cookie_file and os.path.exists(cookie_file):
+                options['cookies'] = cookie_file
+        elif cookie_source == 'browser':
             options['cookies-from-browser'] = self.config.get('cookie_browser', 'chrome')
 
         # フォーマットと品質を設定
@@ -393,7 +399,12 @@ class YoutubeDownloader:
         try:
             # 先に動画情報を取得してタイトルを表示
             ydl_opts = {'quiet': True, 'extract_flat': True, 'skip_download': True}
-            if self.config.get('use_cookies', False):
+            cookie_source = self.config.get('cookie_source')
+            if cookie_source == 'file':
+                cookie_file = self.config.get('cookie_file_path')
+                if cookie_file and os.path.exists(cookie_file):
+                    ydl_opts['cookies'] = cookie_file
+            elif cookie_source == 'browser':
                 ydl_opts['cookies-from-browser'] = self.config.get('cookie_browser', 'chrome')
             
             with YoutubeDL(ydl_opts) as ydl:
@@ -479,7 +490,7 @@ class YoutubeDownloader:
         
         gdrive_folder_id = None
         if self.gdrive_uploader.enabled:
-            if self.config.get('google_drive_create_playlist_folder', True):
+            if self.config.get('create_playlist_folder', True):
                 gdrive_folder_id = self.gdrive_uploader.find_or_create_folder(playlist_title)
             else:
                 gdrive_folder_id = self.gdrive_uploader.parent_folder_id
@@ -533,7 +544,7 @@ class YoutubeDownloader:
 
     def _create_playlist_directory(self, base_dir, playlist_title):
         """再生リスト用のディレクトリを作成する"""
-        if not self.config.get('makedirector', True):
+        if not self.config.get('create_playlist_folder', True):
             return base_dir
         safe_title = re.sub(r'[\\/*?:\"<>|]', "_", playlist_title)
         playlist_dir = os.path.join(base_dir, safe_title)
