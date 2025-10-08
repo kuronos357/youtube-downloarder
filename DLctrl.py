@@ -60,7 +60,7 @@ class ConfigGUI(tk.Tk):
         # 基本的な設定項目を辞書として定義
         base_config = {
             "video_quality": "best",
-            "makedirector": True,
+            "create_playlist_folder": True,
             "enable_logging": True,
             "log_file_path": log_file_path,
             "enable_volume_adjustment": False,
@@ -77,10 +77,8 @@ class ConfigGUI(tk.Tk):
             ],
             "default_directory_index": 1,
             "destination": "local",
-            "enable_google_drive_upload": False,
             "google_drive_parent_folder_id": "",
             "google_drive_credentials_path": "",
-            "google_drive_create_playlist_folder": True,
             "google_drive_token_path": token_file_path,
         }
 
@@ -109,7 +107,7 @@ class ConfigGUI(tk.Tk):
         self.dir_var = tk.IntVar(value=self.config_data.get('default_directory_index'))
         self.ffmpeg_var = tk.StringVar(value=self.config_data.get('ffmpeg_path'))
         self.video_quality_var = tk.StringVar(value=self.config_data.get('video_quality', 'best'))
-        self.makedir_var = tk.BooleanVar(value=self.config_data.get('makedirector'))
+        self.create_playlist_folder_var = tk.BooleanVar(value=self.config_data.get('create_playlist_folder', True))
         self.enable_logging_var = tk.BooleanVar(value=self.config_data.get('enable_logging'))
         self.log_path_var = tk.StringVar(value=self.config_data.get('log_file_path'))
         self.enable_volume_var = tk.BooleanVar(value=self.config_data.get('enable_volume_adjustment'))
@@ -125,17 +123,15 @@ class ConfigGUI(tk.Tk):
         self.destination_var = tk.StringVar(value=self.config_data.get('destination', 'local'))
 
         # Google Drive settings
-        self.enable_gdrive_upload_var = tk.BooleanVar(value=self.config_data.get('enable_google_drive_upload', False))
         self.gdrive_parent_id_var = tk.StringVar(value=self.config_data.get('google_drive_parent_folder_id', ''))
         self.gdrive_parent_id_var.trace_add('write', self._on_gdrive_folder_id_change)
         self.gdrive_credentials_path_var = tk.StringVar(value=self.config_data.get('google_drive_credentials_path', ''))
-        self.gdrive_create_playlist_folder_var = tk.BooleanVar(value=self.config_data.get('google_drive_create_playlist_folder', True))
 
         # 設定キーとTkinter変数をマッピング
         self.settings_map = {
             'ffmpeg_path': self.ffmpeg_var,
             'video_quality': self.video_quality_var,
-            'makedirector': self.makedir_var,
+            'create_playlist_folder': self.create_playlist_folder_var,
             'enable_logging': self.enable_logging_var,
             'log_file_path': self.log_path_var,
             'enable_volume_adjustment': self.enable_volume_var,
@@ -146,10 +142,8 @@ class ConfigGUI(tk.Tk):
             'use_cookies': self.use_cookies_var,
             'cookie_browser': self.cookie_browser_var,
             'destination': self.destination_var,
-            'enable_google_drive_upload': self.enable_gdrive_upload_var,
             'google_drive_parent_folder_id': self.gdrive_parent_id_var,
             'google_drive_credentials_path': self.gdrive_credentials_path_var,
-            'google_drive_create_playlist_folder': self.gdrive_create_playlist_folder_var,
         }
 
     def _build_ui(self):
@@ -165,6 +159,7 @@ class ConfigGUI(tk.Tk):
         general_tab = ttk.Frame(notebook, padding=10)
         notebook.add(general_tab, text='一般設定')
         self._create_directory_section(general_tab)
+        self._create_gdrive_config_section(general_tab)
 
         # タブ2: ダウンロード設定
         download_tab = ttk.Frame(notebook, padding=10)
@@ -177,7 +172,6 @@ class ConfigGUI(tk.Tk):
         self._create_cookie_config_section(advanced_tab)
         self._create_log_config_section(advanced_tab)
         self._create_notion_config_section(advanced_tab)
-        self._create_gdrive_config_section(advanced_tab)
 
         # 下部のボタン（保存など）を作成
         self._create_bottom_buttons(main_frame)
@@ -187,7 +181,7 @@ class ConfigGUI(tk.Tk):
         self._update_volume_controls()
         self._update_notion_controls()
         self._update_cookie_controls()
-        self._update_gdrive_controls()
+        self._update_destination_views()
 
     def _create_directory_section(self, parent):
         """
@@ -196,18 +190,18 @@ class ConfigGUI(tk.Tk):
         # Destination selection
         dest_frame = ttk.LabelFrame(parent, text='保存先', padding=5)
         dest_frame.pack(fill='x', pady=(0, 10))
-        ttk.Radiobutton(dest_frame, text='ローカル保存', variable=self.destination_var, value='local', command=self._update_gdrive_controls).pack(side='left', padx=5)
-        ttk.Radiobutton(dest_frame, text='Google Driveへアップロード', variable=self.destination_var, value='gdrive', command=self._update_gdrive_controls).pack(side='left', padx=5)
+        ttk.Radiobutton(dest_frame, text='ローカル保存', variable=self.destination_var, value='local', command=self._update_destination_views).pack(side='left', padx=5)
+        ttk.Radiobutton(dest_frame, text='Google Driveへアップロード', variable=self.destination_var, value='gdrive', command=self._update_destination_views).pack(side='left', padx=5)
 
-        dir_section = ttk.LabelFrame(parent, text='ダウンロード先ディレクトリ', padding=5)
-        dir_section.pack(fill='both', expand=True, pady=(0, 10))
-        btn_frame = ttk.Frame(dir_section)
+        self.local_dir_frame = ttk.LabelFrame(parent, text='ダウンロード先ディレクトリ', padding=5)
+        self.local_dir_frame.pack(fill='both', expand=True, pady=(0, 10))
+        btn_frame = ttk.Frame(self.local_dir_frame)
         btn_frame.pack(fill='x', pady=(0, 5))
         ttk.Button(btn_frame, text='ディレクトリを追加', command=self.add_directory).pack(side='left')
         ttk.Label(btn_frame, text='※ディレクトリを追加後、パスを設定してください').pack(side='left', padx=(10, 0))
 
         # スクロール可能なディレクトリリスト領域
-        canvas_frame = ttk.Frame(dir_section)
+        canvas_frame = ttk.Frame(self.local_dir_frame)
         canvas_frame.pack(fill='both', expand=True)
         canvas = tk.Canvas(canvas_frame)
         scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=canvas.yview)
@@ -245,7 +239,7 @@ class ConfigGUI(tk.Tk):
         ttk.Label(quality_frame, text='("best", "1080"など。指定解像度以下の最大画質)').pack(side='left', anchor='w')
 
         # プレイリストのディレクトリ作成設定
-        ttk.Checkbutton(other_frame, text='プレイリストの場合のディレクトリ作成する', variable=self.makedir_var).pack(anchor='w', pady=2)
+        ttk.Checkbutton(other_frame, text='プレイリストの場合、ディレクトリを作成する', variable=self.create_playlist_folder_var).pack(anchor='w', pady=2)
 
         # 音量調整設定
         self.volume_check = ttk.Checkbutton(other_frame, text='音量を調整する', variable=self.enable_volume_var, command=self._update_volume_controls)
@@ -485,13 +479,10 @@ class ConfigGUI(tk.Tk):
         """
         Google Drive連携設定セクションを作成する。
         """
-        gdrive_config_frame = ttk.LabelFrame(parent, text="Google Drive連携設定", padding=5)
-        gdrive_config_frame.pack(fill='x', pady=(0, 10))
+        self.gdrive_frame = ttk.LabelFrame(parent, text="Google Drive連携設定", padding=5)
+        self.gdrive_frame.pack(fill='x', pady=(0, 10))
         
-        self.gdrive_check = ttk.Checkbutton(gdrive_config_frame, text='Google Driveへのアップロードを有効にする', variable=self.enable_gdrive_upload_var, command=self._update_gdrive_controls)
-        self.gdrive_check.pack(anchor='w')
-        
-        self.gdrive_widgets_frame = ttk.Frame(gdrive_config_frame)
+        self.gdrive_widgets_frame = ttk.Frame(self.gdrive_frame)
         self.gdrive_widgets_frame.pack(fill='x', padx=20, pady=5)
 
         self.gdrive_parent_id_label = ttk.Label(self.gdrive_widgets_frame, text='親フォルダID:')
@@ -508,30 +499,16 @@ class ConfigGUI(tk.Tk):
         self.gdrive_credentials_btn = ttk.Button(cred_frame, text='選択', command=self.choose_gdrive_credentials)
         self.gdrive_credentials_btn.pack(side='right', padx=(5, 0))
 
-        self.gdrive_create_playlist_folder_check = ttk.Checkbutton(self.gdrive_widgets_frame, text='再生リスト用のフォルダをGoogle Driveに作成する', variable=self.gdrive_create_playlist_folder_var)
-        self.gdrive_create_playlist_folder_check.pack(anchor='w')
-
-    def _update_gdrive_controls(self):
+    def _update_destination_views(self):
         """
-        Google Drive連携設定に応じてUIの有効/無効を切り替える。
+        保存先の選択に応じて、ローカル用とGoogle Drive用の設定UIを切り替えて表示する。
         """
-        is_gdrive_dest = self.destination_var.get() == 'gdrive'
-        self.enable_gdrive_upload_var.set(is_gdrive_dest)
-        
-        state = 'normal' if is_gdrive_dest else 'disabled'
-        
-        # Disable the main checkbox, as it's now controlled by the radio button
-        self.gdrive_check.config(state='disabled')
-
-        for widget in [
-            self.gdrive_parent_id_label, self.gdrive_parent_id_entry,
-            self.gdrive_credentials_label, self.gdrive_credentials_entry,
-            self.gdrive_credentials_btn, self.gdrive_create_playlist_folder_check
-        ]:
-            if isinstance(widget, ttk.Label):
-                widget.config(foreground='black' if state == 'normal' else 'gray')
-            else:
-                widget.config(state=state)
+        if self.destination_var.get() == 'gdrive':
+            self.local_dir_frame.pack_forget()
+            self.gdrive_frame.pack(fill='x', pady=(0, 10))
+        else:
+            self.gdrive_frame.pack_forget()
+            self.local_dir_frame.pack(fill='both', expand=True, pady=(0, 10))
 
     def choose_gdrive_credentials(self):
         """
