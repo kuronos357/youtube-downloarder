@@ -71,6 +71,7 @@ class ConfigGUI(tk.Tk):
             "cookie_source": "none",
             "cookie_browser": "chrome",
             "cookie_file_path": "",
+            "mark_as_watched": False,
             "directories": [
                 {"path": str(home_dir / "Music"), "format": "mp3"},
                 {"path": str(home_dir / "Videos"), "format": "webm"},
@@ -120,6 +121,7 @@ class ConfigGUI(tk.Tk):
         self.cookie_source_var = tk.StringVar(value=self.config_data.get('cookie_source', 'none'))
         self.cookie_browser_var = tk.StringVar(value=self.config_data.get('cookie_browser'))
         self.cookie_file_path_var = tk.StringVar(value=self.config_data.get('cookie_file_path', ''))
+        self.mark_as_watched_var = tk.BooleanVar(value=self.config_data.get('mark_as_watched', False))
 
         # Destination choice
         self.destination_var = tk.StringVar(value=self.config_data.get('destination', 'local'))
@@ -144,6 +146,7 @@ class ConfigGUI(tk.Tk):
             'cookie_source': self.cookie_source_var,
             'cookie_browser': self.cookie_browser_var,
             'cookie_file_path': self.cookie_file_path_var,
+            'mark_as_watched': self.mark_as_watched_var,
             'destination': self.destination_var,
             'google_drive_parent_folder_id': self.gdrive_parent_id_var,
             'google_drive_credentials_path': self.gdrive_credentials_path_var,
@@ -289,6 +292,10 @@ class ConfigGUI(tk.Tk):
         self.cookie_file_btn = ttk.Button(file_entry_frame, text='選択', command=self.choose_cookie_file)
         self.cookie_file_btn.pack(side='right', padx=(5, 0))
 
+        # --- Mark as watched checkbox ---
+        self.mark_as_watched_check = ttk.Checkbutton(cookie_config_frame, text='YouTubeの視聴履歴に追加する', variable=self.mark_as_watched_var)
+        self.mark_as_watched_check.pack(anchor='w', pady=(10, 0))
+
     def _create_log_config_section(self, parent):
         """
         ログ設定セクションを作成する。
@@ -413,6 +420,10 @@ class ConfigGUI(tk.Tk):
         self.cookie_file_entry.config(state=file_state)
         self.cookie_file_btn.config(state=file_state)
         self.cookie_file_label.config(foreground='black' if source == 'file' else 'gray')
+
+        # Mark as watched control
+        watched_state = 'normal' if source in ['browser', 'file'] else 'disabled'
+        self.mark_as_watched_check.config(state=watched_state)
 
     def _build_directory_list(self):
         """

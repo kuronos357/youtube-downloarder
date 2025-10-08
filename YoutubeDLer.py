@@ -292,22 +292,9 @@ class YoutubeDownloader:
         self.gdrive_uploader = gdrive_uploader
         self.jst = timezone(timedelta(hours=9), 'JST')
 
-    def get_download_options(self, dl_dir, format_choice):
-        """yt-dlpのダウンロードオプションを生成する"""
-        print("ダウンロードオプションを取得しています...")
-        video_quality = self.config.get('video_quality', 'best')
-        enable_volume_adjustment = self.config.get('enable_volume_adjustment', False)
-        volume_level = self.config.get('volume_level', 1.0)
-
-        options = {
-            'outtmpl': os.path.join(dl_dir, f'%(title)s.%(ext)s'),
-        }
-
-        # ffmpegのパスとクッキーを設定
-        ffmpeg_path = self.config.get('ffmpeg_path')
-        if ffmpeg_path and os.path.exists(ffmpeg_path):
-            options['ffmpeg_location'] = ffmpeg_path
-        
+    def _get_base_ydl_options(self):
+        """認証や共通設定に関する基本的なyt-dlpオプションを生成する"""
+        options = {}
         cookie_source = self.config.get('cookie_source')
         if cookie_source == 'file':
             cookie_file = self.config.get('cookie_file_path')
@@ -315,6 +302,28 @@ class YoutubeDownloader:
                 options['cookies'] = cookie_file
         elif cookie_source == 'browser':
             options['cookies-from-browser'] = self.config.get('cookie_browser', 'chrome')
+
+        if self.config.get('mark_as_watched', False) and cookie_source != 'none':
+            options['mark-watched'] = True
+        
+        return options
+
+    def get_download_options(self, dl_dir, format_choice):
+        """yt-dlpのダウンロードオプションを生成する"""
+        print("ダウンロードオプションを取得しています...")
+        video_quality = self.config.get('video_quality', 'best')
+        enable_volume_adjustment = self.config.get('enable_volume_adjustment', False)
+        volume_level = self.config.get('volume_level', 1.0)
+
+        options = self._get_base_ydl_options()
+        options.update({
+            'outtmpl': os.path.join(dl_dir, f'%(title)s.%(ext)s'),
+        })
+
+        # ffmpegのパスを設定
+        ffmpeg_path = self.config.get('ffmpeg_path')
+        if ffmpeg_path and os.path.exists(ffmpeg_path):
+            options['ffmpeg_location'] = ffmpeg_path
 
         # フォーマットと品質を設定
         quality_selector = f"[height<=?{video_quality}]" if str(video_quality).isdigit() and video_quality != 'best' else ""
@@ -398,14 +407,12 @@ class YoutubeDownloader:
 
         try:
             # 先に動画情報を取得してタイトルを表示
-            ydl_opts = {'quiet': True, 'extract_flat': True, 'skip_download': True}
-            cookie_source = self.config.get('cookie_source')
-            if cookie_source == 'file':
-                cookie_file = self.config.get('cookie_file_path')
-                if cookie_file and os.path.exists(cookie_file):
-                    ydl_opts['cookies'] = cookie_file
-            elif cookie_source == 'browser':
-                ydl_opts['cookies-from-browser'] = self.config.get('cookie_browser', 'chrome')
+            ydl_opts = self._get_base_ydl_options()
+            ydl_opts.update({
+                'quiet': True, 
+                'extract_flat': True, 
+                'skip_download': True
+            })
             
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
