@@ -405,15 +405,21 @@ class YoutubeDownloader:
         if not output_dir or not format_choice:
             return
 
+        destination = self.config.get('destination', 'local')
+        if destination == 'gdrive':
+            temp_dir = Path(__file__).parent / '設定・履歴'
+            os.makedirs(temp_dir, exist_ok=True)
+            output_dir = str(temp_dir)
+
         try:
             # 先に動画情報を取得してタイトルを表示
             ydl_opts = self._get_base_ydl_options()
             ydl_opts.update({
-                'quiet': True, 
-                'extract_flat': True, 
+                'quiet': True,
+                'extract_flat': True,
                 'skip_download': True
             })
-            
+
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
 
@@ -421,14 +427,14 @@ class YoutubeDownloader:
             print(f"処理対象: {title}")
             print(f"URL: {video_url}")
 
-            destination = self.config.get('destination', 'local')
             if destination == 'gdrive':
                 gdrive_folder_id = self.gdrive_uploader.parent_folder_id
                 print(f"保存先: Google Drive (フォルダID: {gdrive_folder_id})")
+                print(f"一時ディレクトリ: {output_dir}")
             else:
                 print(f"保存先: ローカル ({output_dir})")
             print(f"フォーマット: {format_choice}")
-            
+
             is_playlist = 'entries' in info and info.get('entries')
             if is_playlist:
                 self._process_playlist(info, video_url, output_dir, format_choice)
@@ -467,15 +473,7 @@ class YoutubeDownloader:
         success, error_msg, video_info, final_filepath = self.download_video(url, output_dir, format_choice)
         
         if success:
-            self.error_logger.mark_as_resolved(url)
-            if self.gdrive_uploader.enabled and final_filepath:
-                upload_id = self.gdrive_uploader.upload_file(final_filepath)
-                if upload_id:
-                    try:
-                        os.remove(final_filepath)
-                        print(f"ローカルファイルを削除しました: {final_filepath}")
-                    except OSError as e:
-                        print(f"ローカルファイルの削除に失敗しました: {e}")
+            self._handle_successful_download(url, final_filepath)
         else:
             self.error_logger.log(url, error_msg)
 
@@ -519,15 +517,7 @@ class YoutubeDownloader:
 
             if success:
                 stats['success'] += 1
-                self.error_logger.mark_as_resolved(url)
-                if self.gdrive_uploader.enabled and final_filepath:
-                    upload_id = self.gdrive_uploader.upload_file(final_filepath, folder_id=gdrive_folder_id)
-                    if upload_id:
-                        try:
-                            os.remove(final_filepath)
-                            print(f"ローカルファイルを削除しました: {final_filepath}")
-                        except OSError as e:
-                            print(f"ローカルファイルの削除に失敗しました: {e}")
+                self._handle_successful_download(url, final_filepath, gdrive_folder_id=gdrive_folder_id)
             else:
                 stats['failed'] += 1
                 if error_msg: error_messages.append(error_msg)
@@ -548,6 +538,24 @@ class YoutubeDownloader:
                     self.notion_uploader.upload(v_log, parent_page_id=parent_page_id)
 
         self._print_summary(stats['total'], stats['success'], stats['failed'])
+
+    def _handle_successful_download(self, url, filepath, gdrive_folder_id=None):
+        """Handles post-processing for a successfully downloaded file."""
+        self.error_logger.mark_as_resolved(url)
+        
+        if not self.gdrive_uploader.enabled:
+            return
+
+        if not filepath or not os.path.exists(filepath):
+            return
+
+        upload_id = self.gdrive_uploader.upload_file(filepath, folder_id=gdrive_folder_id)
+        if upload_id:
+            try:
+                os.remove(filepath)
+                print(f"ローカルファイルを削除しました: {filepath}")
+            except OSError as e:
+                print(f"ローカルファイルの削除に失敗しました: {e}")
 
     def _create_playlist_directory(self, base_dir, playlist_title):
         """再生リスト用のディレクトリを作成する"""
