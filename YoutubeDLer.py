@@ -300,18 +300,18 @@ class FileSorter:
         final_path = ""
 
         if self.destination == 'gdrive':
-            print(f"Uploading {filename} to Google Drive...")
+            print(f"{filename} をGoogle Driveにアップロードしています...")
             upload_id = self._upload_to_gdrive(temp_filepath, gdrive_folder_id)
             if upload_id:
-                print(f"File ID: {upload_id}. Upload successful.")
+                print(f"ファイルID: {upload_id}。アップロードに成功しました。")
                 final_path = f"gdrive:{gdrive_folder_id}/{filename}"
             else:
                 raise Exception("Google Driveへのアップロードに失敗しました。")
         else: # local
             final_path = os.path.join(final_dest, filename)
-            print(f"Moving {filename} to {final_dest}...")
+            print(f"{filename} を {final_dest} に移動しています...")
             shutil.move(temp_filepath, final_path)
-            print("Move successful.")
+            print("移動に成功しました。")
 
         # 一時ファイルを削除
         try:
@@ -397,13 +397,13 @@ class FileSorter:
         try:
             return build('drive', 'v3', credentials=creds)
         except HttpError as error:
-            print(f'An error occurred building Drive service: {error}')
+            print(f'Driveサービスの構築中にエラーが発生しました: {error}')
             self.error_logger.log("Google Drive Auth", f"Failed to build service: {error}")
             return None
 
     def _upload_to_gdrive(self, file_path, folder_id):
         if not self.gdrive_service or not os.path.exists(file_path):
-            print("Google Drive service not available or file does not exist.")
+            print("Google Driveサービスが利用できないか、ファイルが存在しません。")
             return None
 
         file_metadata = {'name': os.path.basename(file_path), 'parents': [folder_id]}
@@ -413,7 +413,7 @@ class FileSorter:
             file = self.gdrive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
             return file.get('id')
         except HttpError as error:
-            print(f'An error occurred during upload: {error}')
+            print(f'アップロード中にエラーが発生しました: {error}')
             self.error_logger.log(file_path, f"Google Drive upload failed: {error}")
             return None
 
@@ -425,16 +425,16 @@ class FileSorter:
             query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and '{parent_folder_id}' in parents and trashed=false"
             response = self.gdrive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
             if folders := response.get('files', []):
-                print(f"Found existing Google Drive folder: '{folder_name}'")
+                print(f"既存のGoogle Driveフォルダを見つけました: '{folder_name}'")
                 return folders[0].get('id')
 
-            print(f"Creating Google Drive folder: '{folder_name}'...")
+            print(f"Google Driveフォルダを作成しています: '{folder_name}'...")
             file_metadata = {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [parent_folder_id]}
             folder = self.gdrive_service.files().create(body=file_metadata, fields='id').execute()
-            print(f"Folder created with ID: {folder.get('id')}")
+            print(f"フォルダを作成しました。ID: {folder.get('id')}")
             return folder.get('id')
         except HttpError as error:
-            print(f'An error occurred while finding/creating folder: {error}')
+            print(f'フォルダの検索または作成中にエラーが発生しました: {error}')
             self.error_logger.log(folder_name, f"Google Drive folder operation failed: {error}")
             return parent_folder_id
 
