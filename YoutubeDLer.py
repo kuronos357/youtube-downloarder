@@ -491,6 +491,7 @@ class YoutubeDownloader:
 
             print(f"処理対象: {info.get('title', 'タイトル不明')}")
             print(f"URL: {video_url}")
+            print(f'ダウンロードディレクトリ: {self.config.get("directories", [])[self.config.get("default_directory_index", 0)].get("path", "")}')
             print(f"一時ディレクトリ: {temp_dir}")
             print(f"フォーマット: {format_choice}")
 
