@@ -254,14 +254,14 @@ class FileSorter:
                 video_logs.append(log)
                 error_messages.append(str(e))
 
-        # Clean up the temporary playlist directory, as all video subdirectories should have been cleaned up by _sort_file
+        # 一時プレイリストディレクトリをクリーンアップします。動画のサブディレクトリは_sort_fileでクリーンアップされているはずです。
         try:
             if results and results[0].get('filepath'):
-                # From a path like .../temp_downloads/PlaylistTitle/VideoTitle/file.mp4, get PlaylistTitle dir
+                # .../temp_downloads/PlaylistTitle/VideoTitle/file.mp4 のようなパスから PlaylistTitle ディレクトリを取得します
                 video_dir = os.path.dirname(results[0]['filepath'])
                 playlist_temp_dir = os.path.dirname(video_dir)
                 
-                # Safety check to ensure we are deleting a directory inside temp_downloads
+                # temp_downloads 内のディレクトリを削除していることを確認するための安全チェック
                 if os.path.exists(playlist_temp_dir) and 'temp_downloads' in playlist_temp_dir:
                     playlist_title_from_info = results[0]['playlist_info'].get('title', 'playlist')
                     safe_title = re.sub(r'[\/*?:"<>|]', "_", playlist_title_from_info)
@@ -326,13 +326,13 @@ class FileSorter:
                 final_path = f"gdrive:{gdrive_folder_id}/{filename}"
             else:
                 raise Exception("Google Driveへのアップロードに失敗しました。")
-        else: # local
+        else: # ローカル保存
             final_path = os.path.join(final_dest, filename)
             print(f"{filename} を {final_dest} に移動しています...")
             shutil.move(temp_filepath, final_path)
             print("移動に成功しました。")
 
-        # Clean up the temporary directory for the video
+        # 動画用の一時ディレクトリをクリーンアップ
         try:
             video_temp_dir = os.path.dirname(temp_filepath)
             if os.path.exists(video_temp_dir) and 'temp_downloads' in video_temp_dir:
@@ -563,7 +563,7 @@ class YoutubeDownloader:
         """指定されたURLの動画をダウンロードし、結果を辞書で返す"""
         print(f"\nダウンロード開始: {url}")
 
-        # First, get video info without downloading to create a directory
+        # まず、ダウンロードせずに動画情報を取得してディレクトリを作成します
         info_opts = self._get_base_ydl_options()
         info_opts.update({'quiet': True, 'skip_download': True})
         try:
@@ -575,7 +575,7 @@ class YoutubeDownloader:
             self.error_logger.log(url, f"動画情報取得失敗: {clean_error_msg}")
             return {'success': False, 'error_message': f"動画情報取得失敗: {clean_error_msg}", 'info': {}, 'filepath': None, 'url': url, 'format': format_choice}
 
-        # Create a video-specific temporary directory
+        # 動画固有の一時ディレクトリを作成
         video_title = info.get('title', 'untitled_video')
         safe_title = re.sub(r'[\/*?:"<>|]', "_", video_title)
         video_temp_dir = os.path.join(output_dir, safe_title)
@@ -586,7 +586,7 @@ class YoutubeDownloader:
         
         with YoutubeDL(ydl_opts) as ydl:
             try:
-                # Re-using info dict to predict filename
+                # info辞書を再利用してファイル名を予測
                 temp_filepath = ydl.prepare_filename(info)
                 base, _ = os.path.splitext(temp_filepath)
                 final_filepath = f"{base}.{format_choice}"
@@ -602,7 +602,7 @@ class YoutubeDownloader:
             except Exception as e:
                 clean_error_msg = re.sub(r'\x1b\[[0-9;]*m', '', str(e))
                 print(f"✗ エラーが発生しました: {clean_error_msg}")
-                # We already have the info dict from before
+                # 事前に取得したinfo辞書があります
                 return {'success': False, 'error_message': clean_error_msg, 'info': info, 'filepath': None, 'url': url, 'format': format_choice}
 
     def _process_single_video(self, url, output_dir, format_choice):
@@ -621,27 +621,27 @@ class YoutubeDownloader:
 
         playlist_dir = self._create_temp_playlist_directory(output_dir, info.get('title', 'playlist'))
         
-        # Use ThreadPoolExecutor for parallel downloads
-        with ThreadPoolExecutor(max_workers=4) as executor: # Using 4 parallel workers. This can be made configurable later.
+        # ThreadPoolExecutorを使用して並列ダウンロードを実行
+        with ThreadPoolExecutor(max_workers=4) as executor: # 4つの並列ワーカーを使用。これは後で設定可能にできます。
             futures = {executor.submit(self._download_video, url, playlist_dir, format_choice): url for url in video_urls}
             
             for i, future in enumerate(as_completed(futures), 1):
                 url = futures[future]
-                print(f"\n再生リストの処理完了 ({i}/{len(video_urls)}): {url}")
+                print(f"\n再生リストの処理中 ({i}/{len(video_urls)}): {url}")
                 try:
                     result = future.result()
                     result['playlist_info'] = info
                     results.append(result)
                 except Exception as exc:
                     print(f'✗ {url} のダウンロードで例外が発生しました: {exc}')
-                    # Log the error
+                    # エラーをログに記録
                     clean_error_msg = re.sub(r'\x1b\[[0-9;]*m', '', str(exc))
                     self.error_logger.log(url, f"並列処理中の例外: {clean_error_msg}")
-                    # Create a failure result to keep playlist processing consistent
+                    # 再生リストの処理の一貫性を保つために失敗結果を作成
                     results.append({
                         'success': False, 
                         'error_message': clean_error_msg, 
-                        'info': {}, # Info might not be available if exception was early
+                        'info': {}, # 例外が早期に発生した場合、infoが利用できない可能性があります
                         'filepath': None, 
                         'url': url, 
                         'format': format_choice,
