@@ -20,7 +20,7 @@ class ConfigGUI(tk.Tk):
         """
         super().__init__()
         self.title('設定マネージャー')
-        self.geometry('1000x600')
+        self.geometry('1000x800')
         self.resizable(True, True)
         
         # 設定の読み込み
@@ -158,8 +158,12 @@ class ConfigGUI(tk.Tk):
         """
         main_frame = ttk.Frame(self, padding=10)
         main_frame.pack(fill='both', expand=True)
+
+        # 上部のボタン（保存など）を作成
+        self._create_top_buttons(main_frame)
+
         notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill='both', expand=True, pady=(0, 10))
+        notebook.pack(fill='both', expand=True, pady=(10, 0))
 
         # タブ1: 一般設定
         general_tab = ttk.Frame(notebook, padding=10)
@@ -178,9 +182,6 @@ class ConfigGUI(tk.Tk):
         self._create_cookie_config_section(advanced_tab)
         self._create_log_config_section(advanced_tab)
         self._create_notion_config_section(advanced_tab)
-
-        # 下部のボタン（保存など）を作成
-        self._create_bottom_buttons(main_frame)
 
         # 各コントロールの初期状態を更新
         self._update_log_controls()
@@ -371,14 +372,14 @@ class ConfigGUI(tk.Tk):
             except Exception:
                 pass
 
-    def _create_bottom_buttons(self, parent):
+    def _create_top_buttons(self, parent):
         """
-        ウィンドウ下部の「保存して終了」「設定ファイルを開く」ボタンを作成する。
+        ウィンドウ上部の「保存して終了」「設定ファイルを開く」ボタンを作成する。
         """
-        bottom_btn_frame = ttk.Frame(parent)
-        bottom_btn_frame.pack(fill='x', pady=(10, 0))
-        ttk.Button(bottom_btn_frame, text='保存して終了', command=self.on_save_and_exit).pack(side='left', padx=(0, 5))
-        ttk.Button(bottom_btn_frame, text='設定ファイルを開く', command=self.open_config).pack(side='left', padx=5)
+        top_btn_frame = ttk.Frame(parent)
+        top_btn_frame.pack(fill='x', pady=(0, 10))
+        ttk.Button(top_btn_frame, text='保存して終了', command=self.on_save_and_exit).pack(side='left', padx=(0, 5))
+        ttk.Button(top_btn_frame, text='設定ファイルを開く', command=self.open_config).pack(side='left', padx=5)
 
     def _update_volume_controls(self):
         """
