@@ -38,6 +38,66 @@ class Config:
         """設定値を取得する"""
         return self.data.get(key, default)
 
+    def _save_to_file(self):
+        """(Private) Saves the current self.data to the config file."""
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"設定の保存中にエラーが発生しました: {e}")
+            raise
+
+    def update_from_args_and_save(self, args):
+        """Updates self.data from argparse args and saves to file."""
+        updated = False
+        
+        # Top-level settings
+        if args.quality and self.data.get('video_quality') != args.quality:
+            self.data['video_quality'] = args.quality
+            print(f"設定変更: video_quality -> {args.quality}")
+            updated = True
+        if args.dest_type and self.data.get('destination') != args.dest_type:
+            self.data['destination'] = args.dest_type
+            print(f"設定変更: destination -> {args.dest_type}")
+            updated = True
+        if args.no_notion and self.data.get('enable_notion_upload') is not False:
+            self.data['enable_notion_upload'] = False
+            print("設定変更: enable_notion_upload -> False")
+            updated = True
+        if args.no_log and self.data.get('enable_logging') is not False:
+            self.data['enable_logging'] = False
+            print("設定変更: enable_logging -> False")
+            updated = True
+        if args.no_watch and self.data.get('mark_as_watched') is not False:
+            self.data['mark_as_watched'] = False
+            print("設定変更: mark_as_watched -> False")
+            updated = True
+
+        # Directory-related settings for the default profile
+        if args.format or args.output:
+            default_index = self.data.get('default_directory_index', 0)
+            if 'directories' in self.data and 0 <= default_index < len(self.data['directories']):
+                profile = self.data['directories'][default_index]
+                if args.format and profile.get('format') != args.format:
+                    profile['format'] = args.format
+                    print(f"デフォルトプロファイルのフォーマットを '{args.format}' に変更します。")
+                    updated = True
+                if args.output and profile.get('path') != args.output:
+                    profile['path'] = args.output
+                    print(f"デフォルトプロファイルのパスを '{args.output}' に変更します。")
+                    updated = True
+            else:
+                print("警告: ディレクトリ設定を保存するための有効なデフォルトプロファイルが見つかりません。")
+
+        if updated:
+            try:
+                self._save_to_file()
+                print(f"設定を {self.config_path} に正常に保存しました。")
+            except Exception:
+                pass # Error is printed in _save_to_file
+        else:
+            print("指定された設定は既に適用済みか、引数が指定されなかったため、設定ファイルは更新されませんでした。")
+
 class NotionUploader:
     """Notionデータベースへのログエントリのアップロードを処理するクラス"""
     def __init__(self, config, error_logger):
@@ -688,7 +748,7 @@ def print_summary(results):
 def main():
     """メイン処理"""
     parser = argparse.ArgumentParser(description="YouTube動画をダウンロードし、整理します。")
-    parser.add_argument("url", nargs='?', default=None, help="ダウンロードする動画または再生リストのURL。指定しない場合はクリップボードから取得します。")
+    parser.add_argument("url", nargs='?', default=None, help="ダウンロードする動画または再生リストのURL。--saveがない且つURLの指定がない場合はクリップボードから取得します。")
     parser.add_argument("-f", "--format", choices=['mp4', 'webm', 'mp3', 'wav', 'flac'], help="ダウンロード形式を指定します。")
     parser.add_argument("-q", "--quality", help="動画の品質を指定します (例: 1080, 720, best)。")
     parser.add_argument("-o", "--output", help="保存先のディレクトリパスを指定します。")
@@ -696,10 +756,26 @@ def main():
     parser.add_argument("--no-notion", action="store_true", help="Notionへのアップロードを無効にします。")
     parser.add_argument("--no-log", action="store_true", help="ローカルのエラーログ記録を無効にします。")
     parser.add_argument("--no-watch", action="store_true", help="YouTubeで「視聴済み」としてマークする機能を無効にします。")
+    parser.add_argument("--save", action="store_true", help="指定した引数を設定ファイルに保存します。（このフラグを付ける場合はURLも指定してください。指定しない場合は保存のみ行います）")
     args = parser.parse_args()
+
+    base_dir = Path(__file__).parent
+    config_path = base_dir / '設定・履歴/config.json'
+
+    # --saveフラグが指定された場合、設定を保存
+
+    if args.save:
+        print("設定をconfig.jsonに保存します...")
+        config_to_save = Config(config_path)
+        config_to_save.update_from_args_and_save(args)
 
     video_url = args.url
     if not video_url:
+        # --saveが使用された場合、URLなしでもエラーにせず終了
+        if args.save:
+            print("設定の保存が完了しました。URLが指定されていないため、ダウンロードは行いません。")
+            return
+        
         video_url = pyperclip.paste()
         print("コマンドライン引数にURLが指定されていないため、クリップボードからURLを取得しました。")
 
@@ -707,6 +783,7 @@ def main():
         print("有効なURLが指定されていません。")
         return
 
+    # 一時的な上書き設定を作成
     overrides = {
         'format_override': args.format,
         'output_override': args.output,
@@ -720,13 +797,9 @@ def main():
     if args.no_watch:
         overrides['mark_as_watched'] = False
     
-    # Noneの値をフィルタリング
     overrides = {k: v for k, v in overrides.items() if v is not None}
 
-    base_dir = Path(__file__).parent
-    config_path = base_dir / '設定・履歴/config.json'
     temp_dir = base_dir / 'temp_downloads'
-    
     os.makedirs(temp_dir, exist_ok=True)
     
     config = Config(config_path, overrides)
