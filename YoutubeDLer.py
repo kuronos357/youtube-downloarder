@@ -211,7 +211,6 @@ class NotionUploader:
             properties["親アイテム"] = {"relation": [{"id": parent_page_id}]}
         return properties
 
-
 class ErrorLogger:
     """エラー情報をローカルのJSONファイルに記録するクラス"""
 
@@ -453,7 +452,7 @@ class FileSorter:
 
         # ローカル保存の場合
         # コマンドラインからの出力先オーバーライドを優先
-        if output_override := self.config.get("output_override"):
+        if output_override := self.config.get('output_override'):
             if not os.path.isdir(output_override):
                 print(
                     f"警告: 指定された保存先ディレクトリが存在しません: {output_override}。作成を試みます。"
@@ -475,12 +474,10 @@ class FileSorter:
             default_index = 0
 
         default_dir_info = directories[default_index]
-        path = default_dir_info.get("path")
-
+        path = default_dir_info.get('path')
+        
         if not os.path.isdir(path):
-            print(
-                f"警告: 保存先ディレクトリが存在しません: {path}。カレントディレクトリを使用します。"
-            )
+            print(f"警告: 保存先ディレクトリが存在しません: {path}。カレントディレクトリを使用します。")
             return os.getcwd(), None
 
         return path, None
