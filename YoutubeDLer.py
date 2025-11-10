@@ -73,21 +73,33 @@ class Config:
             print("設定変更: mark_as_watched -> False")
             updated = True
 
-        # Directory-related settings for the default profile
-        if args.format or args.output:
-            default_index = self.data.get('default_directory_index', 0)
-            if 'directories' in self.data and 0 <= default_index < len(self.data['directories']):
-                profile = self.data['directories'][default_index]
-                if args.format and profile.get('format') != args.format:
-                    profile['format'] = args.format
-                    print(f"デフォルトプロファイルのフォーマットを '{args.format}' に変更します。")
-                    updated = True
-                if args.output and profile.get('path') != args.output:
-                    profile['path'] = args.output
-                    print(f"デフォルトプロファイルのパスを '{args.output}' に変更します。")
-                    updated = True
+        # Determine the target index for directory-related updates
+        target_index = self.data.get('default_directory_index', 0)
+        valid_index_provided = False
+        if args.index is not None:
+            if 'directories' in self.data and 0 <= args.index < len(self.data['directories']):
+                target_index = args.index
+                valid_index_provided = True
             else:
-                print("警告: ディレクトリ設定を保存するための有効なデフォルトプロファイルが見つかりません。")
+                print(f"警告: インデックス {args.index} は無効です。ディレクトリ関連設定の保存はスキップされます。")
+
+        # Update directory-related settings for the target profile
+        if valid_index_provided and (args.format or args.output):
+            profile = self.data['directories'][target_index]
+            if args.format and profile.get('format') != args.format:
+                profile['format'] = args.format
+                print(f"プロファイル {target_index} のフォーマットを '{args.format}' に変更します。")
+                updated = True
+            if args.output and profile.get('path') != args.output:
+                profile['path'] = args.output
+                print(f"プロファイル {target_index} のパスを '{args.output}' に変更します。")
+                updated = True
+
+        # Update the default_directory_index itself if a valid one was provided
+        if valid_index_provided and self.data.get('default_directory_index') != args.index:
+            self.data['default_directory_index'] = args.index
+            print(f"設定変更: default_directory_index -> {args.index}")
+            updated = True
 
         if updated:
             try:
@@ -748,22 +760,35 @@ def print_summary(results):
 def main():
     """メイン処理"""
     parser = argparse.ArgumentParser(description="YouTube動画をダウンロードし、整理します。")
-    parser.add_argument("url", nargs='?', default=None, help="ダウンロードする動画または再生リストのURL。--saveがない且つURLの指定がない場合はクリップボードから取得します。")
+    parser.add_argument("url", nargs='?', default=None, help="ダウンロードする動画または再生リストのURL。指定しない場合はクリップボードから取得します。")
     parser.add_argument("-f", "--format", choices=['mp4', 'webm', 'mp3', 'wav', 'flac'], help="ダウンロード形式を指定します。")
     parser.add_argument("-q", "--quality", help="動画の品質を指定します (例: 1080, 720, best)。")
     parser.add_argument("-o", "--output", help="保存先のディレクトリパスを指定します。")
+    parser.add_argument("-i", "--index", type=int, help="使用するディレクトリプロファイルのインデックス番号を指定します。")
     parser.add_argument("--dest-type", choices=['local', 'gdrive'], help="保存先種別（ローカル or Google Drive）を指定します。")
     parser.add_argument("--no-notion", action="store_true", help="Notionへのアップロードを無効にします。")
     parser.add_argument("--no-log", action="store_true", help="ローカルのエラーログ記録を無効にします。")
     parser.add_argument("--no-watch", action="store_true", help="YouTubeで「視聴済み」としてマークする機能を無効にします。")
-    parser.add_argument("--save", action="store_true", help="指定した引数を設定ファイルに保存します。（このフラグを付ける場合はURLも指定してください。指定しない場合は保存のみ行います）")
+    parser.add_argument("--save", action="store_true", help="指定した引数を設定ファイルに保存します。")
+    parser.add_argument("--show-config", action="store_true", help="現在の設定を表示して終了します。")
     args = parser.parse_args()
 
     base_dir = Path(__file__).parent
     config_path = base_dir / '設定・履歴/config.json'
 
-    # --saveフラグが指定された場合、設定を保存
+    if args.show_config:
+        print(f"--- 現在の設定ファイル ({config_path}) の内容 ---")
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+            print(json.dumps(config_data, indent=2, ensure_ascii=False))
+        except FileNotFoundError:
+            print("エラー: 設定ファイルが見つかりません。")
+        except json.JSONDecodeError:
+            print("エラー: 設定ファイルが破損しているか、JSON形式ではありません。")
+        return
 
+    # --saveフラグが指定された場合、設定を保存
     if args.save:
         print("設定をconfig.jsonに保存します...")
         config_to_save = Config(config_path)
@@ -789,6 +814,7 @@ def main():
         'output_override': args.output,
         'video_quality': args.quality,
         'destination': args.dest_type,
+        'default_directory_index': args.index,
     }
     if args.no_notion:
         overrides['enable_notion_upload'] = False
