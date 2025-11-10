@@ -5,6 +5,7 @@ import sys
 import shutil
 import pyperclip
 import requests
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from yt_dlp import YoutubeDL
 from datetime import datetime, timezone, timedelta
@@ -18,9 +19,11 @@ from googleapiclient.http import MediaFileUpload
 
 class Config:
     """設定ファイルから設定を読み込み、管理するクラス"""
-    def __init__(self, config_path):
+    def __init__(self, config_path, overrides=None):
         self.config_path = config_path
         self.data = self._read_json()
+        if overrides:
+            self.data.update(overrides)
 
     def _read_json(self):
         """JSONファイルを読み込む"""
@@ -295,6 +298,18 @@ class FileSorter:
             return parent_folder_id, parent_folder_id
         
         # ローカル保存の場合
+        # コマンドラインからの出力先オーバーライドを優先
+        if output_override := self.config.get('output_override'):
+            if not os.path.isdir(output_override):
+                print(f"警告: 指定された保存先ディレクトリが存在しません: {output_override}。作成を試みます。")
+                try:
+                    os.makedirs(output_override, exist_ok=True)
+                    print(f"ディレクトリを作成しました: {output_override}")
+                except Exception as e:
+                    print(f"エラー: ディレクトリの作成に失敗しました: {e}。カレントディレクトリを使用します。")
+                    return os.getcwd(), None
+            return output_override, None
+
         directories = self.config.get('directories', [])
         default_index = self.config.get('default_directory_index', 0)
         
@@ -466,15 +481,8 @@ class YoutubeDownloader:
         self.config = config
         self.error_logger = error_logger
 
-    def run(self, temp_dir):
+    def run(self, video_url, temp_dir, final_dest_display):
         """スクリプトのメイン処理を実行し、ダウンロード結果を返す"""
-        if len(sys.argv) > 1:
-            video_url = sys.argv[1]
-            print("コマンドライン引数からURLを取得しました。")
-        else:
-            video_url = pyperclip.paste()
-            print("クリップボードからURLを取得しました。")
-
         if not video_url or "https" not in video_url:
             print("有効なURLが指定されていません。")
             return []
@@ -491,7 +499,7 @@ class YoutubeDownloader:
 
             print(f"処理対象: {info.get('title', 'タイトル不明')}")
             print(f"URL: {video_url}")
-            print(f'ダウンロードディレクトリ: {self.config.get("directories", [])[self.config.get("default_directory_index", 0)].get("path", "")}')
+            print(f"ダウンロードディレクトリ: {final_dest_display}")
             print(f"一時ディレクトリ: {temp_dir}")
             print(f"フォーマット: {format_choice}")
 
@@ -507,6 +515,10 @@ class YoutubeDownloader:
 
     def _get_default_format(self):
         """デフォルトのフォーマットを取得する"""
+        # コマンドラインからのオーバーライドを優先
+        if format_override := self.config.get('format_override'):
+            return None, format_override
+
         directories = self.config.get('directories', [])
         default_index = self.config.get('default_directory_index', 0)
         if not directories or not (0 <= default_index < len(directories)):
@@ -675,17 +687,67 @@ def print_summary(results):
 
 def main():
     """メイン処理"""
+    parser = argparse.ArgumentParser(description="YouTube動画をダウンロードし、整理します。")
+    parser.add_argument("url", nargs='?', default=None, help="ダウンロードする動画または再生リストのURL。指定しない場合はクリップボードから取得します。")
+    parser.add_argument("-f", "--format", choices=['mp4', 'webm', 'mp3', 'wav', 'flac'], help="ダウンロード形式を指定します。")
+    parser.add_argument("-q", "--quality", help="動画の品質を指定します (例: 1080, 720, best)。")
+    parser.add_argument("-o", "--output", help="保存先のディレクトリパスを指定します。")
+    parser.add_argument("--dest-type", choices=['local', 'gdrive'], help="保存先種別（ローカル or Google Drive）を指定します。")
+    parser.add_argument("--no-notion", action="store_true", help="Notionへのアップロードを無効にします。")
+    parser.add_argument("--no-log", action="store_true", help="ローカルのエラーログ記録を無効にします。")
+    parser.add_argument("--no-watch", action="store_true", help="YouTubeで「視聴済み」としてマークする機能を無効にします。")
+    args = parser.parse_args()
+
+    video_url = args.url
+    if not video_url:
+        video_url = pyperclip.paste()
+        print("コマンドライン引数にURLが指定されていないため、クリップボードからURLを取得しました。")
+
+    if not video_url or "https" not in video_url:
+        print("有効なURLが指定されていません。")
+        return
+
+    overrides = {
+        'format_override': args.format,
+        'output_override': args.output,
+        'video_quality': args.quality,
+        'destination': args.dest_type,
+    }
+    if args.no_notion:
+        overrides['enable_notion_upload'] = False
+    if args.no_log:
+        overrides['enable_logging'] = False
+    if args.no_watch:
+        overrides['mark_as_watched'] = False
+    
+    # Noneの値をフィルタリング
+    overrides = {k: v for k, v in overrides.items() if v is not None}
+
     base_dir = Path(__file__).parent
     config_path = base_dir / '設定・履歴/config.json'
     temp_dir = base_dir / 'temp_downloads'
     
     os.makedirs(temp_dir, exist_ok=True)
     
-    config = Config(config_path)
+    config = Config(config_path, overrides)
+    
+    # 表示用の最終的な保存先を取得
+    final_dest_display = config.get('output_override')
+    if not final_dest_display:
+        if config.get('destination') == 'gdrive':
+            final_dest_display = 'Google Drive'
+        else:
+            dirs = config.get('directories', [])
+            idx = config.get('default_directory_index', 0)
+            if 0 <= idx < len(dirs):
+                final_dest_display = dirs[idx].get('path', '（不明）')
+            else:
+                final_dest_display = '（不明）'
+
     error_logger = ErrorLogger(config)
     
     downloader = YoutubeDownloader(config, error_logger)
-    download_results = downloader.run(temp_dir)
+    download_results = downloader.run(video_url, temp_dir, final_dest_display)
 
     if not download_results:
         print("ダウンロード対象がありませんでした。")
