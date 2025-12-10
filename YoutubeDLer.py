@@ -809,30 +809,23 @@ class YoutubeDownloader:
 
         with YoutubeDL(ydl_opts) as ydl:
             try:
-                # info辞書を再利用してファイル名を予測
-                temp_filepath = ydl.prepare_filename(info)
-                base, _ = os.path.splitext(temp_filepath)
-                final_filepath = f"{base}.{format_choice}"
-
-                if os.path.exists(final_filepath):
-                    msg = f"ファイルが既に存在: {os.path.basename(final_filepath)}"
-                    print(f"ダウンロードを中止します: {msg}")
-                    return {
-                        "success": False,
-                        "error_message": msg,
-                        "info": info,
-                        "filepath": final_filepath,
-                        "url": url,
-                        "format": format_choice,
-                    }
-
                 ydl.download([url])
+                
+                downloaded_files = os.listdir(video_temp_dir)
+                if not downloaded_files:
+                    raise Exception("ダウンロードは成功しましたが、一時ディレクトリ内でファイルが見つかりませんでした。")
+                
+                # Sort by modification time to find the most recent file.
+                downloaded_files.sort(key=lambda f: os.path.getmtime(os.path.join(video_temp_dir, f)))
+                actual_filename = downloaded_files[-1]
+                actual_filepath = os.path.join(video_temp_dir, actual_filename)
+
                 print(f"✓ ダウンロード成功: {info.get('title', 'Unknown Title')}")
                 return {
                     "success": True,
                     "error_message": None,
                     "info": info,
-                    "filepath": final_filepath,
+                    "filepath": actual_filepath,
                     "url": url,
                     "format": format_choice,
                 }
