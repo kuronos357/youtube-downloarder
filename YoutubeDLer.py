@@ -1018,6 +1018,7 @@ def main():
             return
 
         video_url = pyperclip.paste()
+        print(f"【デバッグ】クリップボードから取得した内容: '{video_url}'")
         print(
             "コマンドライン引数にURLが指定されていないため、クリップボードからURLを取得しました。"
         )
